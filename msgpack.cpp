@@ -1,5 +1,8 @@
 #include "catch.hpp"
 
+#include <cstdint>
+#include <cstring>
+
 extern "C" {
 #include "helloworld_msgpack.h"
 }
@@ -207,11 +210,192 @@ msgpack::type parse_type(unsigned char x) {
   }
 }
 
+[[noreturn]] void internal_error(void) {
+  printf("internal error\n");
+  exit(1);
+}
+
+uint16_t read_bigendian_u16(unsigned char *from) {
+
+  return (from[0] << 8u) | from[1];
+}
+
+uint32_t read_bigendian_u32(unsigned char *from) {
+
+  return (from[0] << 24u) | (from[1] << 16u) | (from[2] << 8u) |
+         (from[3] << 0u);
+}
+
+// Only failure mode is going to be out of bounds
+// Return NULL on out of bounds, otherwise start of the next entry
+unsigned char *handle_msgpack(unsigned char *start, unsigned char *end);
+
+unsigned char *handle_str_data(uint64_t N, unsigned char *start,
+                               unsigned char *end) {
+
+  char *tmp = (char *)malloc(N + 1);
+  memcpy(tmp, start, N);
+  tmp[N] = '\0';
+  printf("got a string: %s\n", tmp);
+  free(tmp);
+
+  return start + N;
+}
+
+unsigned char *handle_str(unsigned char *start, unsigned char *end) {
+  uint64_t available = end - start;
+  assert(available != 0);
+
+  switch (parse_type(*start)) {
+  case msgpack::fixstr: {
+    uint64_t N = *start & 0x1fu;
+    return handle_str_data(N, start + 1, end);
+  }
+
+  default:
+    internal_error();
+  }
+}
+
+unsigned char *handle_int(unsigned char *start, unsigned char *end) {
+  uint64_t available = end - start;
+  assert(available != 0);
+
+  switch (parse_type(*start)) {
+
+
+  default:
+    internal_error();
+  }
+}
+unsigned char *handle_array_elements(uint64_t N, unsigned char *start,
+                                     unsigned char *end) {
+
+  uint64_t available = end - start;
+  printf("%lu array elements in %lu bytes\n", N, available);
+
+  for (uint64_t i = 0; i < N; i++) {
+    printf("Array element %lu: %s\n", i, type_name(parse_type(*start)));
+    start = handle_msgpack(start, end);
+    if (!start) {
+      return 0;
+    }
+  }
+
+  return start;
+}
+
+unsigned char *handle_array(unsigned char *start, unsigned char *end) {
+  uint64_t available = end - start;
+  assert(available != 0);
+
+  // very similar to map
+  switch (parse_type(*start)) {
+  case msgpack::fixarray: {
+    uint64_t N = *start & 0xfu;
+    return handle_array_elements(N, start + 1, end);
+  }
+
+  case msgpack::array16: {
+    if (available < 3) {
+      return 0;
+    }
+    uint64_t N = read_bigendian_u16(start + 1);
+    return handle_array_elements(N, start + 3, end);
+  }
+
+  case msgpack::array32: {
+    if (available < 5) {
+      return 0;
+    }
+    uint64_t N = read_bigendian_u32(start + 1);
+    return handle_array_elements(N, start + 5, end);
+  }
+
+  default:
+    internal_error();
+  }
+}
+
+unsigned char *handle_map_elements(uint64_t N, unsigned char *start,
+                                   unsigned char *end) {
+
+  uint64_t available = end - start;
+  printf("%lu map pairs in %lu bytes\n", N, available);
+
+  for (uint64_t i = 0; i < 2 * N; i++) {
+    printf("Map element %lu: %s\n", i, type_name(parse_type(*start)));
+
+    // Probably want to pass element + next one to a function together
+    start = handle_msgpack(start, end);
+    if (!start) {
+      return 0;
+    }
+  }
+
+  return start;
+}
+
+unsigned char *handle_map(unsigned char *start, unsigned char *end) {
+  uint64_t available = end - start;
+  assert(available != 0);
+
+  switch (parse_type(*start)) {
+  case msgpack::fixmap: {
+    uint64_t N = *start & 0xfu;
+    return handle_map_elements(N, start + 1, end);
+  }
+  case msgpack::map16: {
+    if (available < 3) {
+      return 0;
+    }
+    uint64_t N = read_bigendian_u16(start + 1);
+    return handle_map_elements(N, start + 3, end);
+  }
+  case msgpack::map32: {
+    if (end - start < 5) {
+      return 0;
+    }
+    uint64_t N = read_bigendian_u32(start + 1);
+    return handle_map_elements(N, start + 5, end);
+  }
+  default:
+    internal_error();
+  }
+}
+
+unsigned char *handle_msgpack(unsigned char *start, unsigned char *end) {
+  uint64_t available = end - start;
+  if (available == 0) {
+    return 0;
+  }
+
+  switch (parse_type(*start)) {
+  case msgpack::fixmap:
+  case msgpack::map16:
+  case msgpack::map32:
+    return handle_map(start, end);
+
+  case msgpack::fixarray:
+  case msgpack::array16:
+  case msgpack::array32:
+    return handle_array(start, end);
+
+  case msgpack::fixstr:
+    return handle_str(start, end);
+
+  default:
+    printf("Unimplemented handler for %s\n", type_name(parse_type(*start)));
+    internal_error();
+  }
+}
+
 TEST_CASE("str") { CHECK(helloworld_msgpack_len != 0); }
 
 TEST_CASE("hello world") {
   SECTION("sanity checks") {
     unsigned char start = helloworld_msgpack[0];
     CHECK(parse_type(start) == msgpack::fixmap);
+    handle_map(helloworld_msgpack, helloworld_msgpack + helloworld_msgpack_len);
   }
 }
