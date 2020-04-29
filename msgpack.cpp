@@ -215,6 +215,7 @@ msgpack::type parse_type(unsigned char x) {
   exit(1);
 }
 
+uint8_t read_bigendian_u8(unsigned char *from) { return from[0]; }
 uint16_t read_bigendian_u16(unsigned char *from) {
 
   return (from[0] << 8u) | from[1];
@@ -224,6 +225,39 @@ uint32_t read_bigendian_u32(unsigned char *from) {
 
   return (from[0] << 24u) | (from[1] << 16u) | (from[2] << 8u) |
          (from[3] << 0u);
+}
+
+uint32_t read_bigendian_u64(unsigned char *from) {
+
+  return ((uint64_t)from[0] << 56u) | ((uint64_t)from[1] << 48u) |
+         ((uint64_t)from[2] << 40u) | ((uint64_t)from[3] << 32u) |
+         (from[4] << 24u) | (from[5] << 16u) | (from[6] << 8u) |
+         (from[7] << 0u);
+}
+
+int8_t read_bigendian_s8(unsigned char *from) {
+  uint8_t u = read_bigendian_u8(from);
+  int8_t s;
+  memcpy(&s, &u, 1);
+  return s;
+}
+int16_t read_bigendian_s16(unsigned char *from) {
+  uint16_t u = read_bigendian_u16(from);
+  int16_t s;
+  memcpy(&s, &u, 2);
+  return s;
+}
+int32_t read_bigendian_s32(unsigned char *from) {
+  uint32_t u = read_bigendian_u32(from);
+  int32_t s;
+  memcpy(&s, &u, 4);
+  return s;
+}
+int64_t read_bigendian_s64(unsigned char *from) {
+  uint64_t u = read_bigendian_u64(from);
+  int64_t s;
+  memcpy(&s, &u, 8);
+  return s;
 }
 
 // Only failure mode is going to be out of bounds
@@ -257,12 +291,86 @@ unsigned char *handle_str(unsigned char *start, unsigned char *end) {
   }
 }
 
+void sink_sint(int64_t x) { printf("sint got %ld\n", x); }
+void sink_uint(uint64_t x) { printf("uint got %lu\n", x); }
+
+unsigned bytes_used(msgpack::type ty)
+{
+  using namespace msgpack;
+  switch(ty)
+    {
+    case negfixint: return 1;
+    case int8: return 2;
+    case int16: return 3;
+    case int32: return 5;
+    case int64: return 9;
+
+    case posfixint: return 1;
+    case uint8: return 2;
+    case uint16: return 3;
+    case uint32: return 5;
+    case uint64: return 9;
+      
+    default:
+      printf("Unimplemented bytes_used for %s\n", type_name(ty));
+      internal_error();
+    }
+}
 unsigned char *handle_int(unsigned char *start, unsigned char *end) {
   uint64_t available = end - start;
   assert(available != 0);
 
-  switch (parse_type(*start)) {
+  msgpack::type ty = parse_type(*start);
+  uint64_t bytes = bytes_used(ty);
 
+  if (available < bytes) {
+    return 0;
+  }
+  
+  switch (ty) {
+  case msgpack::posfixint: {
+    // considered 'unsigned' by spec
+    sink_uint(read_bigendian_s8(start));
+    return start + bytes;
+  }
+  case msgpack::negfixint: {
+    // considered 'signed' by spec
+    sink_sint(read_bigendian_s8(start));
+    return start + bytes;
+  }
+  case msgpack::int8: {
+    sink_sint(read_bigendian_s8(start + 1));
+    return start + bytes;
+  }
+  case msgpack::int16: {
+    sink_sint(read_bigendian_s16(start + 1));
+    return start + bytes;
+  }
+  case msgpack::int32: {
+    sink_sint(read_bigendian_s32(start + 1));
+    return start + bytes;
+  }
+  case msgpack::int64: {
+    sink_sint(read_bigendian_s64(start + 1));
+    return start + bytes;
+  }
+
+  case msgpack::uint8: {
+    sink_uint(read_bigendian_u8(start + 1));
+    return start + bytes;
+  }
+  case msgpack::uint16: {
+    sink_uint(read_bigendian_u16(start + 1));
+    return start + bytes;
+  }
+  case msgpack::uint32: {
+    sink_uint(read_bigendian_u32(start + 1));
+    return start + bytes;
+  }
+  case msgpack::uint64: {
+    sink_uint(read_bigendian_u64(start + 1));
+    return start + bytes;
+  }
 
   default:
     internal_error();
@@ -384,6 +492,19 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end) {
   case msgpack::fixstr:
     return handle_str(start, end);
 
+
+  case msgpack::posfixint:
+  case msgpack::int8:
+  case msgpack::int16:
+  case msgpack::int32:
+  case msgpack::int64:
+  case msgpack::negfixint:
+  case msgpack::uint8:
+  case msgpack::uint16:
+  case msgpack::uint32:
+  case msgpack::uint64:
+    return handle_int(start, end);
+    
   default:
     printf("Unimplemented handler for %s\n", type_name(parse_type(*start)));
     internal_error();
