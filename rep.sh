@@ -3,7 +3,7 @@
 llvm-objcopy -O binary --only-section=.note  a.out-openmp-amdgcn-amd-amdhsa-gfx906 helloworld.msgpack
 
 cat <<EOF > helloworld_msgpack.h
-extern unsigned char helloword_msgpack[];
+extern unsigned char helloworld_msgpack[];
 extern unsigned int helloworld_msgpack_len;
 EOF
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-CC="clang -std=c99"
-CXX="clang++ -std=c++11"
+CC="clang -std=c99 -Wall"
+CXX="clang++ -std=c++11 -Wall"
 
 # time $CXX -O3 catch.cpp -c -o catch.o
 
