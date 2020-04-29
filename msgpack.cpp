@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <functional>
 
 extern "C" {
 #include "helloworld_msgpack.h"
@@ -262,7 +263,7 @@ int64_t read_bigendian_s64(unsigned char *from) {
 
 // Only failure mode is going to be out of bounds
 // Return NULL on out of bounds, otherwise start of the next entry
-unsigned char *handle_msgpack(unsigned char *start, unsigned char *end);
+
 unsigned char fix_mask(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
@@ -356,19 +357,29 @@ unsigned bytes_used_variable(unsigned char *start, unsigned char *end) {
   }
 }
 
-unsigned char *handle_str_data(uint64_t N, unsigned char *start,
-                               unsigned char *end) {
+struct functors {
+  std::function<void(size_t, unsigned char *)> cb_string =
+      [](size_t, unsigned char *) {};
+  std::function<void(int64_t)> cb_signed = [](int64_t) {};
+  std::function<void(uint64_t)> cb_unsigned = [](uint64_t) {};
+  std::function<void(unsigned char *start, unsigned char *end)> cb_array;
+};
+
+unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
+                              functors f);
+
+void handle_str_data(uint64_t N, unsigned char *bytes) {
 
   char *tmp = (char *)malloc(N + 1);
-  memcpy(tmp, start, N);
+  memcpy(tmp, bytes, N);
   tmp[N] = '\0';
   printf("got a string: %s\n", tmp);
   free(tmp);
-
-  return start + N;
 }
 
-unsigned char *handle_str(unsigned char *start, unsigned char *end) {
+unsigned char *
+handle_str(unsigned char *start, unsigned char *end,
+           std::function<void(size_t, unsigned char *)> callback) {
   uint64_t available = end - start;
   assert(available != 0);
 
@@ -379,33 +390,46 @@ unsigned char *handle_str(unsigned char *start, unsigned char *end) {
     return 0;
   }
 
+  uint64_t available_post_header = available - bytes;
+
+  uint64_t N;
   switch (ty) {
   case msgpack::fixstr: {
-    uint64_t N = *start & fix_mask(ty);
-    return handle_str_data(N, start + bytes, end);
+    N = *start & fix_mask(ty);
+    break;
   }
   case msgpack::str8: {
-    uint64_t N = read_bigendian_u8(start + 1);
-    return handle_str_data(N, start + bytes, end);
+    N = read_bigendian_u8(start + 1);
+    break;
   }
   case msgpack::str16: {
-    uint64_t N = read_bigendian_u16(start + 1);
-    return handle_str_data(N, start + bytes, end);
+    N = read_bigendian_u16(start + 1);
+    break;
   }
   case msgpack::str32: {
-    uint64_t N = read_bigendian_u32(start + 1);
-    return handle_str_data(N, start + bytes, end);
+    N = read_bigendian_u32(start + 1);
+    break;
   }
 
   default:
     internal_error();
   }
+
+  if (available_post_header < N) {
+    return 0;
+  }
+  callback(N, start + bytes);
+  return start + bytes + N;
 }
 
 void sink_sint(int64_t x) { printf("sint got %ld\n", x); }
 void sink_uint(uint64_t x) { printf("uint got %lu\n", x); }
 
-unsigned char *handle_int(unsigned char *start, unsigned char *end) {
+unsigned char *handle_int(unsigned char *start, unsigned char *end,
+                          std::function<void(int64_t)> signed_callback,
+                          std::function<void(uint64_t)> unsigned_callback
+
+) {
   uint64_t available = end - start;
   assert(available != 0);
 
@@ -473,7 +497,7 @@ unsigned char *handle_array_elements(uint64_t N, unsigned char *start,
 
   for (uint64_t i = 0; i < N; i++) {
     printf("Array element %lu: %s\n", i, type_name(parse_type(*start)));
-    start = handle_msgpack(start, end);
+    start = handle_msgpack(start, end, {});
     if (!start) {
       return 0;
     }
@@ -525,7 +549,7 @@ unsigned char *handle_map_elements(uint64_t N, unsigned char *start,
     printf("Map element %lu: %s\n", i, type_name(parse_type(*start)));
 
     // Probably want to pass element + next one to a function together
-    start = handle_msgpack(start, end);
+    start = handle_msgpack(start, end, {});
     if (!start) {
       return 0;
     }
@@ -563,7 +587,8 @@ unsigned char *handle_map(unsigned char *start, unsigned char *end) {
   }
 }
 
-unsigned char *handle_msgpack(unsigned char *start, unsigned char *end) {
+unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
+                              functors f) {
   uint64_t available = end - start;
   if (available == 0) {
     return 0;
@@ -585,7 +610,7 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end) {
   case msgpack::str8:
   case msgpack::str16:
   case msgpack::str32:
-    return handle_str(start, end);
+    return handle_str(start, end, f.cb_string);
 
   case msgpack::posfixint:
   case msgpack::int8:
@@ -597,7 +622,7 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end) {
   case msgpack::uint16:
   case msgpack::uint32:
   case msgpack::uint64:
-    return handle_int(start, end);
+    return handle_int(start, end, f.cb_signed, f.cb_unsigned);
 
   default:
     printf("Unimplemented handler for %s\n", type_name(parse_type(*start)));
