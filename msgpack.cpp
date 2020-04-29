@@ -263,57 +263,95 @@ int64_t read_bigendian_s64(unsigned char *from) {
 // Only failure mode is going to be out of bounds
 // Return NULL on out of bounds, otherwise start of the next entry
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end);
-
-unsigned bytes_used_by_header(msgpack::type ty) {
+unsigned char fix_mask(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
-  case negfixint:
-    return 1;
-  case int8:
-    return 2;
-  case int16:
-    return 3;
-  case int32:
-    return 5;
-  case int64:
-    return 9;
+  case fixstr:
+    return 0x1f;
+  case fixarray:
+    return 0xf;
+  case fixmap:
+    return 0xf;
+  default:
+    printf("Unimplemented fix_mask for %s\n", type_name(ty));
+    internal_error();
+  }
+}
+unsigned bytes_used_fixed(msgpack::type ty) {
+  using namespace msgpack;
+  switch (ty) {
 
+  case nil:
+  case f:
+  case t:
+    return 1;
+
+  case negfixint:
   case posfixint:
     return 1;
+  case int8:
   case uint8:
     return 2;
+  case int16:
   case uint16:
     return 3;
+  case int32:
   case uint32:
     return 5;
+  case int64:
   case uint64:
     return 9;
 
   case fixarray:
-    return 1;
-  case array16:
-    return 3;
-  case array32:
-    return 5;
-
   case fixmap:
-    return 1;
-  case map16:
-    return 3;
-  case map32:
-    return 5;
-
   case fixstr:
     return 1;
+
   case str8:
     return 2;
+
+  case array16:
+  case map16:
   case str16:
     return 3;
+
+  case array32:
+  case map32:
   case str32:
     return 5;
 
   default:
-    printf("Unimplemented bytes_used_by_header for %s\n", type_name(ty));
+    printf("Unimplemented bytes_used_fixed for %s\n", type_name(ty));
+    internal_error();
+  }
+}
+
+unsigned bytes_used_variable(unsigned char *start, unsigned char *end) {
+  using namespace msgpack;
+  uint64_t available = end - start;
+  assert(available != 0);
+
+  msgpack::type ty = parse_type(*start);
+
+  switch (ty) {
+  case nil:
+  case f:
+  case t:
+  case negfixint:
+  case posfixint:
+  case int8:
+  case uint8:
+  case int16:
+  case uint16:
+  case int32:
+  case uint32:
+  case int64:
+  case uint64:
+    return 0;
+    // Others are much more difficult
+
+  default:
+    printf("Unimplemented bytes_used_variable for %s\n", type_name(ty));
     internal_error();
   }
 }
@@ -335,7 +373,7 @@ unsigned char *handle_str(unsigned char *start, unsigned char *end) {
   assert(available != 0);
 
   msgpack::type ty = parse_type(*start);
-  uint64_t bytes = bytes_used_by_header(ty);
+  uint64_t bytes = bytes_used_fixed(ty);
 
   if (available < bytes) {
     return 0;
@@ -343,7 +381,7 @@ unsigned char *handle_str(unsigned char *start, unsigned char *end) {
 
   switch (ty) {
   case msgpack::fixstr: {
-    uint64_t N = *start & 0x1fu;
+    uint64_t N = *start & fix_mask(ty);
     return handle_str_data(N, start + bytes, end);
   }
   case msgpack::str8: {
@@ -372,7 +410,7 @@ unsigned char *handle_int(unsigned char *start, unsigned char *end) {
   assert(available != 0);
 
   msgpack::type ty = parse_type(*start);
-  uint64_t bytes = bytes_used_by_header(ty);
+  uint64_t bytes = bytes_used_fixed(ty);
 
   if (available < bytes) {
     return 0;
@@ -449,7 +487,7 @@ unsigned char *handle_array(unsigned char *start, unsigned char *end) {
   assert(available != 0);
 
   msgpack::type ty = parse_type(*start);
-  uint64_t bytes = bytes_used_by_header(ty);
+  uint64_t bytes = bytes_used_fixed(ty);
 
   if (available < bytes) {
     return 0;
@@ -457,7 +495,7 @@ unsigned char *handle_array(unsigned char *start, unsigned char *end) {
 
   switch (ty) {
   case msgpack::fixarray: {
-    uint64_t N = *start & 0xfu;
+    uint64_t N = *start & fix_mask(ty);
     return handle_array_elements(N, start + bytes, end);
   }
 
@@ -501,7 +539,7 @@ unsigned char *handle_map(unsigned char *start, unsigned char *end) {
   assert(available != 0);
 
   msgpack::type ty = parse_type(*start);
-  uint64_t bytes = bytes_used_by_header(ty);
+  uint64_t bytes = bytes_used_fixed(ty);
 
   if (available < bytes) {
     return 0;
@@ -509,7 +547,7 @@ unsigned char *handle_map(unsigned char *start, unsigned char *end) {
 
   switch (ty) {
   case msgpack::fixmap: {
-    uint64_t N = *start & 0xfu;
+    uint64_t N = *start & fix_mask(ty);
     return handle_map_elements(N, start + bytes, end);
   }
   case msgpack::map16: {
@@ -530,8 +568,9 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end) {
   if (available == 0) {
     return 0;
   }
+  msgpack::type ty = parse_type(*start);
 
-  switch (parse_type(*start)) {
+  switch (ty) {
   case msgpack::fixmap:
   case msgpack::map16:
   case msgpack::map32:
