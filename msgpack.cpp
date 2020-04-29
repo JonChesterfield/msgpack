@@ -285,7 +285,22 @@ unsigned char *handle_str(unsigned char *start, unsigned char *end) {
     uint64_t N = *start & 0x1fu;
     return handle_str_data(N, start + 1, end);
   }
-
+  case msgpack::str8: {
+    if (available < 2) { return 0; }
+    uint64_t N = read_bigendian_u8(start+1);
+    return handle_str_data(N, start + 2, end);
+  }
+  case msgpack::str16: {
+    if (available < 3) { return 0; }
+    uint64_t N = read_bigendian_u16(start+1);
+    return handle_str_data(N, start + 3, end);
+  }
+  case msgpack::str32: {
+    if (available < 5) { return 0; }
+    uint64_t N = read_bigendian_u32(start+1);
+    return handle_str_data(N, start + 5, end);
+  }
+    
   default:
     internal_error();
   }
@@ -490,6 +505,9 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end) {
     return handle_array(start, end);
 
   case msgpack::fixstr:
+  case msgpack::str8:
+  case msgpack::str16:
+  case msgpack::str32:
     return handle_str(start, end);
 
 
