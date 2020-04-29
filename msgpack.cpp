@@ -366,13 +366,11 @@ struct functors {
 
   std::function<void(uint64_t)> cb_unsigned = [](uint64_t) {};
 
-  std::function<void(unsigned char *start, unsigned char *end)> cb_array =
-      [](unsigned char *, unsigned char *) {};
+  std::function<void(uint64_t N, unsigned char *start, unsigned char *end)>
+      cb_array = [](uint64_t, unsigned char *, unsigned char *) {};
 
-  std::function<void(unsigned char *start_key, unsigned char *end_key,
-                     unsigned char *start_value, unsigned char *end_value)>
-      cb_map = [](unsigned char *, unsigned char *, unsigned char *,
-                  unsigned char *) {};
+  std::function<void(uint64_t N, unsigned char *start, unsigned char *end)>
+      cb_map = [](uint64_t N, unsigned char *, unsigned char *) {};
 };
 
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
@@ -502,21 +500,15 @@ unsigned char *handle_int(unsigned char *start, unsigned char *end,
 unsigned char *handle_array_elements(uint64_t N, unsigned char *start,
                                      unsigned char *end, functors f) {
 
-  for (uint64_t i = 0; i < N; i++) {
-
-    // First get the size of the element and bounds check with a nop functor
-    unsigned char *next = handle_msgpack(start, end, {});
-    if (!next) {
-      return 0;
-    }
-
-    // Then do the callback
-    f.cb_array(start, end);
-
-    start = next;
+  // First get the size of the element and bounds check with a nop functor
+  unsigned char *next = handle_msgpack(start, end, {});
+  if (!next) {
+    return 0;
   }
 
-  return start;
+  // could pass next, instead of end here
+  f.cb_array(N, start, end);
+  return next;
 }
 
 unsigned char *handle_array(unsigned char *start, unsigned char *end,
@@ -555,25 +547,13 @@ unsigned char *handle_array(unsigned char *start, unsigned char *end,
 unsigned char *handle_map_elements(uint64_t N, unsigned char *start,
                                    unsigned char *end, functors f) {
 
-  for (uint64_t i = 0; i < 2 * N; i += 2) {
-
-    unsigned char *start_key = start;
-    unsigned char *end_key = handle_msgpack(start_key, end, {});
-    if (!end_key) {
-      return 0;
-    }
-
-    unsigned char *start_value = end_key;
-    unsigned char *end_value = handle_msgpack(start_value, end, {});
-    if (!end_value) {
-      return 0;
-    }
-
-    f.cb_map(start_key, end_key, start_value, end_value);
-    start = end_value;
+  // First get the size of the element and bounds check with a nop functor
+  unsigned char *next = handle_msgpack(start, end, {});
+  if (!next) {
+    return 0;
   }
-
-  return start;
+  f.cb_map(N, start, end);
+  return next;
 }
 
 unsigned char *handle_map(unsigned char *start, unsigned char *end,
@@ -660,40 +640,72 @@ TEST_CASE("hello world") {
   SECTION("run it") {
     functors f;
     unsigned indent = 0;
-    auto pi = [&indent] { printf("%*s", indent, ""); };
+    const unsigned by = 2;
+    auto nl = [&indent] { printf("\n%*s", indent, ""); };
 
     f.cb_string = [&](size_t N, unsigned char *bytes) {
-      pi();
       char *tmp = (char *)malloc(N + 1);
       memcpy(tmp, bytes, N);
       tmp[N] = '\0';
-      printf("str: %s\n", tmp);
+      printf("\"%s\"", tmp);
       free(tmp);
     };
 
     f.cb_signed = [&](int64_t x) {
-      pi();
-      printf("sint: %ld\n", x);
+      printf("\"%ld\"", x);
     };
     f.cb_unsigned = [&](uint64_t x) {
-      pi();
-      printf("uint: %lu\n", x);
+      printf("\"%lu\"", x);
     };
 
-    f.cb_array = [&](unsigned char *start, unsigned char *end) {
-      indent += 2;
-      handle_msgpack(start, end, f);
-      indent -= 2;
+    f.cb_array = [&](uint64_t N, unsigned char *start, unsigned char *end) {
+      indent += by;
+      printf("[");nl();
+      const char *sep = "";
+      for (uint64_t i = 0; i < N; i++) {
+        indent += by;
+        printf("%s", sep);
+        sep = ",";
+        unsigned char *next = handle_msgpack(start, end, f);
+        indent -= by;
+        start = next;
+        if (!next) {
+          break;
+        }
+      }
+      indent -= by;
+      printf("]");nl();
+
     };
 
-    f.cb_map = [&](unsigned char *start_key, unsigned char *end_key,
-                   unsigned char *start_value, unsigned char *end_value) {
-      indent += 2;
-      handle_msgpack(start_key, end_key, f);
-      pi();
-      printf(" => \n");
-      handle_msgpack(start_value, end_value, f);
-      indent -= 2;
+    f.cb_map = [&](uint64_t N, unsigned char *start, unsigned char *end) {
+      indent += by;
+      printf("{");nl();
+
+      for (uint64_t i = 0; i < 2 * N; i += 2) {
+        unsigned char *start_key = start;
+        unsigned char *end_key = handle_msgpack(start_key, end, f);
+        if (!end_key) {
+          break;
+        }
+
+        printf(" : ");
+
+        unsigned char *start_value = end_key;
+        unsigned char *end_value = handle_msgpack(start_value, end, f);
+
+        if (!end_value) {
+          break;
+        }
+
+        printf(", ");nl();
+
+        start = end_value;
+      }
+
+      indent -= by;
+      printf("}");nl();
+
     };
     handle_msgpack(helloworld_msgpack,
                    helloworld_msgpack + helloworld_msgpack_len, f);
