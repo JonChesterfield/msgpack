@@ -1,5 +1,5 @@
-#ifndef MSGPACK_HPP
-#define MSGPACK_HPP
+#ifndef MSGPACK_H
+#define MSGPACK_H
 
 #include <functional>
 

@@ -4,7 +4,7 @@
 #include <functional>
 #include <string>
 
-#include "msgpack.hpp"
+#include "msgpack.h"
 
 
 namespace msgpack {
