@@ -303,19 +303,27 @@ unsigned bytes_used_fixed(msgpack::type ty) {
   case uint64:
     return 9;
 
+  case float32:
+    return 5;
+  case float64:
+    return 9;
+
   case fixarray:
   case fixmap:
   case fixstr:
     return 1;
 
+  case bin8:
   case str8:
     return 2;
 
+  case bin16:
   case array16:
   case map16:
   case str16:
     return 3;
 
+  case bin32:
   case array32:
   case map32:
   case str32:
@@ -385,7 +393,6 @@ handle_str(unsigned char *start, unsigned char *end,
   if (available < bytes) {
     return 0;
   }
-
   uint64_t available_post_header = available - bytes;
 
   uint64_t N;
@@ -437,50 +444,51 @@ unsigned char *handle_int(unsigned char *start, unsigned char *end,
   case msgpack::posfixint: {
     // considered 'unsigned' by spec
     unsigned_callback(read_bigendian_s8(start));
-    return start + bytes;
+    break;
   }
   case msgpack::negfixint: {
     // considered 'signed' by spec
     signed_callback(read_bigendian_s8(start));
-    return start + bytes;
+    break;
   }
   case msgpack::int8: {
     signed_callback(read_bigendian_s8(start + 1));
-    return start + bytes;
+    break;
   }
   case msgpack::int16: {
     signed_callback(read_bigendian_s16(start + 1));
-    return start + bytes;
+    break;
   }
   case msgpack::int32: {
     signed_callback(read_bigendian_s32(start + 1));
-    return start + bytes;
+    break;
   }
   case msgpack::int64: {
     signed_callback(read_bigendian_s64(start + 1));
-    return start + bytes;
+    break;
   }
 
   case msgpack::uint8: {
     unsigned_callback(read_bigendian_u8(start + 1));
-    return start + bytes;
+    break;
   }
   case msgpack::uint16: {
     unsigned_callback(read_bigendian_u16(start + 1));
-    return start + bytes;
+    break;
   }
   case msgpack::uint32: {
     unsigned_callback(read_bigendian_u32(start + 1));
-    return start + bytes;
+    break;
   }
   case msgpack::uint64: {
     unsigned_callback(read_bigendian_u64(start + 1));
-    return start + bytes;
+    break;
   }
 
   default:
     internal_error();
   }
+  return start + bytes;
 }
 
 unsigned char *
@@ -558,6 +566,50 @@ handle_map(unsigned char *start, unsigned char *end,
   return callback(N, start + bytes, end);
 }
 
+unsigned char *handle_other(unsigned char *start, unsigned char *end) {
+  uint64_t available = end - start;
+  assert(available != 0);
+  msgpack::type ty = parse_type(*start);
+
+  uint64_t bytes = bytes_used_fixed(ty);
+  if (available < bytes) {
+    return 0;
+  }
+  uint64_t available_post_header = available - bytes;
+
+  uint64_t N;
+  switch (ty) {
+
+  case msgpack::float32:
+  case msgpack::float64: {
+    N = 0;
+    break;
+  }
+
+  case msgpack::bin8: {
+    N = read_bigendian_u8(start + 1);
+    break;
+  }
+  case msgpack::bin16: {
+    N = read_bigendian_u16(start + 1);
+    break;
+  }
+  case msgpack::bin32: {
+    N = read_bigendian_u32(start + 1);
+    break;
+  }
+
+  default:
+    internal_error();
+  }
+
+  if (available_post_header < N) {
+    return 0;
+  }
+
+  return start + bytes + N;
+}
+
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
                               functors f) {
   uint64_t available = end - start;
@@ -567,22 +619,6 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   msgpack::type ty = parse_type(*start);
 
   switch (ty) {
-  case msgpack::fixmap:
-  case msgpack::map16:
-  case msgpack::map32:
-    return handle_map(start, end, f.cb_map);
-
-  case msgpack::fixarray:
-  case msgpack::array16:
-  case msgpack::array32:
-    return handle_array(start, end, f.cb_array);
-
-  case msgpack::fixstr:
-  case msgpack::str8:
-  case msgpack::str16:
-  case msgpack::str32:
-    return handle_str(start, end, f.cb_string);
-
   case msgpack::posfixint:
   case msgpack::int8:
   case msgpack::int16:
@@ -594,6 +630,29 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   case msgpack::uint32:
   case msgpack::uint64:
     return handle_int(start, end, f.cb_signed, f.cb_unsigned);
+
+  case msgpack::fixstr:
+  case msgpack::str8:
+  case msgpack::str16:
+  case msgpack::str32:
+    return handle_str(start, end, f.cb_string);
+
+  case msgpack::fixarray:
+  case msgpack::array16:
+  case msgpack::array32:
+    return handle_array(start, end, f.cb_array);
+
+  case msgpack::fixmap:
+  case msgpack::map16:
+  case msgpack::map32:
+    return handle_map(start, end, f.cb_map);
+
+  case msgpack::bin8:
+  case msgpack::bin16:
+  case msgpack::bin32:
+  case msgpack::float32:
+  case msgpack::float64:
+    return handle_other(start, end);
 
   default:
     printf("Unimplemented handler for %s\n", type_name(parse_type(*start)));
