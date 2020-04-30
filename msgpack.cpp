@@ -367,6 +367,23 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   }
 }
 
+void foreach_map(unsigned char *start, unsigned char *end,
+                 std::function<void(unsigned char *, unsigned char *,
+                                    unsigned char *, unsigned char *)>
+                     callback) {
+  functors f;
+  f.cb_map_elements = callback;
+  handle_msgpack(start, end, f);
+}
+
+void foreach_array(
+    unsigned char *start, unsigned char *end,
+    std::function<void(unsigned char *, unsigned char *)> callback) {
+  functors f;
+  f.cb_array_elements = callback;
+  handle_msgpack(start, end, f);
+}
+
 #ifndef NOCATCH
 TEST_CASE("str") { CHECK(helloworld_msgpack_len != 0); }
 
@@ -471,6 +488,24 @@ void on_matching_string_key_apply_action_to_value(
   };
 
   handle_msgpack(start, end, f);
+}
+
+bool message_is_string(unsigned char *start, unsigned char *end,
+                       const char *str) {
+  bool matched = false;
+  functors f;
+  size_t strN = strlen(str);
+
+  f.cb_string = [=, &matched](size_t N, unsigned char *bytes) {
+    if (N == strN) {
+      if (memcmp(bytes, str, N) == 0) {
+        matched = true;
+      }
+    }
+  };
+
+  handle_msgpack(start, end, f);
+  return matched;
 }
 
 TEST_CASE("hello world") {
@@ -601,11 +636,58 @@ TEST_CASE("hello world") {
   }
 
   SECTION("run it big") {
-    printf("bigger\n");
-    /*
-    json_print(manykernels_msgpack,
-               manykernels_msgpack + manykernels_msgpack_len);
-    */
+    unsigned char *start = manykernels_msgpack;
+    unsigned char *end = manykernels_msgpack + manykernels_msgpack_len;
+
+    foreach_map(start, end,
+                [&](unsigned char *start_key, unsigned char *end_key,
+                    unsigned char *start_value, unsigned char *end_value) {
+                  bool matched =
+                      message_is_string(start_key, end_key, "amdhsa.kernels");
+
+                  if (!matched) {
+                    return;
+                  }
+
+                  foreach_array(
+                      start_value, end_value,
+                      [&](unsigned char *start, unsigned char *end) {
+                        uint64_t kernarg_count = 0;
+                        uint64_t kernarg_res;
+                        uint64_t kernname_count = 0;
+                        std::string kernname_res;
+
+                        auto inner = [&](unsigned char *start_key,
+                                         unsigned char *end_key,
+                                         unsigned char *start_value,
+                                         unsigned char *end_value) {
+                          if (message_is_string(start_key, end_key,
+                                                ".kernarg_segment_size")) {
+                            functors f;
+                            f.cb_unsigned = [&](uint64_t x) {
+                              kernarg_count++;
+                              kernarg_res = x;
+                            };
+                            handle_msgpack(start_value, end_value, f);
+                          }
+
+                          if (message_is_string(start_key, end_key, ".name")) {
+                            functors f;
+                            f.cb_string = [&](size_t N, unsigned char *bytes) {
+                              kernname_count++;
+                              kernname_res = std::string(bytes, bytes + N);
+                            };
+                            handle_msgpack(start_value, end_value, f);
+                          }
+                        };
+
+                        foreach_map(start, end, inner);
+
+                        if (kernarg_count == 1 && kernname_count == 1) {
+                          printf("winning\n");
+                        }
+                      });
+                });
   }
 }
 #endif
