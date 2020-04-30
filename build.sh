@@ -10,8 +10,9 @@ $CXX -DNOCATCH -DNDEBUG -O3 msgpack.cpp -emit-llvm -S -c -o msgpack.ll
 llc msgpack.ll -o msgpack.s
 
 $CC helloworld_msgpack.c -c -o helloworld_msgpack.o
+$CC manykernels_msgpack.c -c -o manykernels_msgpack.o
 
-$CXX msgpack.o catch.o helloworld_msgpack.o -o msgpack.exe
+$CXX msgpack.o catch.o helloworld_msgpack.o manykernels_msgpack.o -o msgpack.exe
 
 ./msgpack.exe
 

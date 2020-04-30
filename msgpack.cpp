@@ -2,6 +2,7 @@
 #include "catch.hpp"
 #endif
 
+#include <cassert>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -9,6 +10,7 @@
 
 extern "C" {
 #include "helloworld_msgpack.h"
+#include "manykernels_msgpack.h"
 }
 
 namespace msgpack {
@@ -59,8 +61,7 @@ msgpack::type parse_type(unsigned char x) {
 
 } // namespace msgpack
 
-template <typename T, typename R>
-R bitcast(T x) {
+template <typename T, typename R> R bitcast(T x) {
   static_assert(sizeof(T) == sizeof(R), "");
   R tmp;
   memcpy(&tmp, &x, sizeof(T));
@@ -76,10 +77,7 @@ typedef uint64_t (*payload_info_t)(unsigned char *);
 
 namespace {
 namespace payload {
-// Some types don't contain embedded information, e.g. true
-// boolean may be available as a mask
 uint64_t read_zero(unsigned char *) { return 0; }
-uint64_t read_one(unsigned char *) { return 1; }
 
 // Read the first byte and zero/sign extend it
 uint64_t read_embedded_u8(unsigned char *start) { return start[0]; }
@@ -89,6 +87,7 @@ uint64_t read_embedded_s8(unsigned char *start) {
 }
 
 // Read a masked part of the first byte
+uint64_t read_via_mask_0x1(unsigned char *start) { return *start & 0x1u; }
 uint64_t read_via_mask_0xf(unsigned char *start) { return *start & 0xfu; }
 uint64_t read_via_mask_0x1f(unsigned char *start) { return *start & 0x1fu; }
 
@@ -175,53 +174,56 @@ payload_info_t payload_info(msgpack::type ty) {
 // Only failure mode is going to be out of bounds
 // Return NULL on out of bounds, otherwise start of the next entry
 
+namespace fallback {
+void nop_string(size_t, unsigned char *) {}
+void nop_signed(int64_t) {}
+void nop_unsigned(uint64_t) {}
+void nop_boolean(bool) {}
+unsigned char *nop_array(uint64_t N, unsigned char *start, unsigned char *end);
+unsigned char *nop_map(uint64_t N, unsigned char *start, unsigned char *end) {
+  // A map is equivalent to two arrays of length N
+  unsigned char *next = nop_array(N, start, end);
+  if (!next) {
+    return 0;
+  }
+  return nop_array(N, next, end);
+}
+
+} // namespace fallback
+
 struct functors {
-  functors();
 
-  std::function<void(size_t, unsigned char *)> cb_string =
-      [](size_t, unsigned char *) {};
+  std::function<void(size_t, unsigned char *)> cb_string = fallback::nop_string;
 
-  std::function<void(int64_t)> cb_signed = [](int64_t) {};
+  std::function<void(int64_t)> cb_signed = fallback::nop_signed;
 
-  std::function<void(uint64_t)> cb_unsigned = [](uint64_t) {};
+  std::function<void(uint64_t)> cb_unsigned = fallback::nop_unsigned;
 
-  std::function<void(bool)> cb_boolean = [](bool) {};
+  std::function<void(bool)> cb_boolean = fallback::nop_boolean;
 
   std::function<unsigned char *(uint64_t N, unsigned char *start,
                                 unsigned char *end)>
-      cb_array;
+      cb_array = fallback::nop_array;
 
   std::function<unsigned char *(uint64_t N, unsigned char *start,
                                 unsigned char *end)>
-      cb_map;
+      cb_map = fallback::nop_map;
 };
 
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
                               functors f);
 
-functors::functors()
-    : cb_array{[](uint64_t N, unsigned char *start,
-                  unsigned char *end) -> unsigned char * {
-        for (uint64_t i = 0; i < N; i++) {
-          unsigned char *next = handle_msgpack(start, end, {});
-          if (!next) {
-            return 0;
-          }
-          start = next;
-        }
-        return start;
-      }},
-      cb_map{[](uint64_t N, unsigned char *start,
-                unsigned char *end) -> unsigned char * {
-        for (uint64_t i = 0; i < 2 * N; i++) {
-          unsigned char *next = handle_msgpack(start, end, {});
-          if (!next) {
-            return 0;
-          }
-          start = next;
-        }
-        return start;
-      }} {}
+unsigned char *fallback::nop_array(uint64_t N, unsigned char *start,
+                                   unsigned char *end) {
+  for (uint64_t i = 0; i < N; i++) {
+    unsigned char *next = handle_msgpack(start, end, {});
+    if (!next) {
+      return 0;
+    }
+    start = next;
+  }
+  return start;
+}
 
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
                               functors f) {
@@ -242,7 +244,8 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   switch (ty) {
   case msgpack::t:
   case msgpack::f: {
-    f.cb_boolean(!!N);
+    // t is 0b11000010, f is 0b11000011, masked with 0x1
+    f.cb_boolean(N);
     return start + bytes;
   }
 
@@ -306,7 +309,6 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
     if (available_post_header < N) {
       return 0;
     }
-    // No callback
     return start + bytes + N;
   }
   }
@@ -333,15 +335,14 @@ void json_print(unsigned char *start, unsigned char *end) {
 
   f.cb_array = [&](uint64_t N, unsigned char *start,
                    unsigned char *end) -> unsigned char * {
-    printf("%*s[\n", indent, "");
+    printf("\n%*s[\n", indent, "");
     indent += by;
 
-    const char *sep = "";
     for (uint64_t i = 0; i < N; i++) {
       indent += by;
-      printf("%s", sep);
-      sep = ",";
+      printf("%*s", indent, "");
       unsigned char *next = handle_msgpack(start, end, f);
+      printf(",\n");
       indent -= by;
       start = next;
       if (!next) {
@@ -349,14 +350,14 @@ void json_print(unsigned char *start, unsigned char *end) {
       }
     }
     indent -= by;
-    printf("%*s]\n", indent, "");
+    printf("%*s]", indent, "");
 
     return start;
   };
 
   f.cb_map = [&](uint64_t N, unsigned char *start,
                  unsigned char *end) -> unsigned char * {
-    printf("%*s{\n", indent, "");
+    printf("\n%*s{\n", indent, "");
     indent += by;
 
     for (uint64_t i = 0; i < 2 * N; i += 2) {
@@ -382,12 +383,13 @@ void json_print(unsigned char *start, unsigned char *end) {
     }
 
     indent -= by;
-    printf("%*s}\n", indent, "");
+    printf("%*s}", indent, "");
 
     return start;
   };
 
   handle_msgpack(start, end, f);
+  printf("\n");
 }
 
 void on_matching_string_key_apply_action_to_value(
@@ -558,5 +560,11 @@ TEST_CASE("hello world") {
              segment_size);
     }
   }
+
+  SECTION("run it big") {
+    printf("bigger\n");
+    json_print(manykernels_msgpack, manykernels_msgpack + manykernels_msgpack_len);
+  }
+
 }
 #endif
