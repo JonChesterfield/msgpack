@@ -69,27 +69,27 @@ template <typename T, typename R> R bitcast(T x) {
 // key-value pairs or an embedded integer.
 // Each takes a pointer to the start of the header and returns a uint64_t
 
-typedef uint64_t (*payload_info_t)(unsigned char *);
+typedef uint64_t (*payload_info_t)(const unsigned char *);
 
 namespace {
 namespace payload {
-uint64_t read_zero(unsigned char *) { return 0; }
+uint64_t read_zero(const unsigned char *) { return 0; }
 
 // Read the first byte and zero/sign extend it
-uint64_t read_embedded_u8(unsigned char *start) { return start[0]; }
-uint64_t read_embedded_s8(unsigned char *start) {
+uint64_t read_embedded_u8(const unsigned char *start) { return start[0]; }
+uint64_t read_embedded_s8(const unsigned char *start) {
   int64_t res = bitcast<uint8_t, int8_t>(start[0]);
   return bitcast<int64_t, uint64_t>(res);
 }
 
 // Read a masked part of the first byte
-uint64_t read_via_mask_0x1(unsigned char *start) { return *start & 0x1u; }
-uint64_t read_via_mask_0xf(unsigned char *start) { return *start & 0xfu; }
-uint64_t read_via_mask_0x1f(unsigned char *start) { return *start & 0x1fu; }
+uint64_t read_via_mask_0x1(const unsigned char *start) { return *start & 0x1u; }
+uint64_t read_via_mask_0xf(const unsigned char *start) { return *start & 0xfu; }
+uint64_t read_via_mask_0x1f(const unsigned char *start) { return *start & 0x1fu; }
 
 // Read 1/2/4/8 bytes immediately following the type byte and zero/sign extend
 // Big endian format.
-uint64_t read_size_field_u8(unsigned char *from) {
+uint64_t read_size_field_u8(const unsigned char *from) {
   from++;
   return from[0];
 }
@@ -98,7 +98,7 @@ uint64_t read_size_field_u8(unsigned char *from) {
 // is available. And probably use the builtin to test the diy
 const bool use_bswap = false;
 
-uint64_t read_size_field_u16(unsigned char *from) {
+uint64_t read_size_field_u16(const unsigned char *from) {
   from++;
   if (use_bswap) {
     uint16_t b;
@@ -108,7 +108,7 @@ uint64_t read_size_field_u16(unsigned char *from) {
     return (from[0] << 8u) | from[1];
   }
 }
-uint64_t read_size_field_u32(unsigned char *from) {
+uint64_t read_size_field_u32(const unsigned char *from) {
   from++;
   if (use_bswap) {
     uint32_t b;
@@ -119,7 +119,7 @@ uint64_t read_size_field_u32(unsigned char *from) {
            (from[3] << 0u);
   }
 }
-uint64_t read_size_field_u64(unsigned char *from) {
+uint64_t read_size_field_u64(const unsigned char *from) {
   from++;
   if (use_bswap) {
     uint64_t b;
@@ -133,22 +133,22 @@ uint64_t read_size_field_u64(unsigned char *from) {
   }
 }
 
-uint64_t read_size_field_s8(unsigned char *from) {
+uint64_t read_size_field_s8(const unsigned char *from) {
   uint8_t u = read_size_field_u8(from);
   int64_t res = bitcast<uint8_t, int8_t>(u);
   return bitcast<int64_t, uint64_t>(res);
 }
-uint64_t read_size_field_s16(unsigned char *from) {
+uint64_t read_size_field_s16(const unsigned char *from) {
   uint16_t u = read_size_field_u16(from);
   int64_t res = bitcast<uint16_t, int16_t>(u);
   return bitcast<int64_t, uint64_t>(res);
 }
-uint64_t read_size_field_s32(unsigned char *from) {
+uint64_t read_size_field_s32(const unsigned char *from) {
   uint32_t u = read_size_field_u32(from);
   int64_t res = bitcast<uint32_t, int32_t>(u);
   return bitcast<int64_t, uint64_t>(res);
 }
-uint64_t read_size_field_s64(unsigned char *from) {
+uint64_t read_size_field_s64(const unsigned char *from) {
   uint64_t u = read_size_field_u64(from);
   int64_t res = bitcast<uint64_t, int64_t>(u);
   return bitcast<int64_t, uint64_t>(res);
@@ -173,86 +173,83 @@ payload_info_t payload_info(msgpack::type ty) {
 
 namespace fallback {
 
-unsigned char *skip_next_message(unsigned char *start, unsigned char *end);
-
-void nop_string(size_t, unsigned char *) {}
+void nop_string(size_t, const unsigned char *) {}
 void nop_signed(int64_t) {}
 void nop_unsigned(uint64_t) {}
 void nop_boolean(bool) {}
+void nop_array_elements(byte_range) {}
+void nop_map_elements(byte_range, byte_range) {}
 
-void nop_array_elements(unsigned char *, unsigned char *) {}
-
-void nop_map_elements(unsigned char *, unsigned char *, unsigned char *,
-                      unsigned char *) {}
-
-unsigned char *
-array(uint64_t N, unsigned char *start, unsigned char *end,
-      std::function<void(unsigned char *, unsigned char *)> callback) {
+const unsigned char *
+array(uint64_t N, byte_range bytes,
+      std::function<void(byte_range)> callback) {
   for (uint64_t i = 0; i < N; i++) {
-    unsigned char *next = skip_next_message(start, end);
+    const unsigned char *next = skip_next_message(bytes.start, bytes.end);
     if (!next) {
       return 0;
     }
-    callback(start, end);
+    callback(bytes);
 
-    start = next;
+    bytes.start = next;
   }
-  return start;
+  return bytes.start;
 }
 
-unsigned char *map(uint64_t N, unsigned char *start, unsigned char *end,
-                   std::function<void(unsigned char *, unsigned char *,
-                                      unsigned char *, unsigned char *)>
+const  unsigned char *map(uint64_t N, byte_range bytes,
+                     std::function<void(byte_range, byte_range)>
                        callback) {
 
   for (uint64_t i = 0; i < N; i++) {
-    unsigned char *start_key = start;
-    unsigned char *end_key = skip_next_message(start_key, end);
+const    unsigned char *start_key = bytes.start;
+const    unsigned char *end_key = skip_next_message(start_key, bytes.end);
 
     if (!end_key) {
       break;
     }
 
-    unsigned char *start_value = end_key;
-    unsigned char *end_value = skip_next_message(start_value, end);
+const    unsigned char *start_value = end_key;
+    const unsigned char *end_value = skip_next_message(start_value, bytes.end);
 
     if (!end_value) {
       break;
     }
 
-    callback(start_key, end_key, start_value, end_value);
+    callback({start_key, end_key}, {start_value, end_value});
 
-    start = end_value;
+    bytes.start = end_value;
   }
-  return start;
+  return bytes.start;
 }
-unsigned char *nop_map(uint64_t N, unsigned char *start, unsigned char *end) {
-  return map(N, start, end, nop_map_elements);
+  
+const unsigned char *nop_map(uint64_t N, byte_range bytes) {
+  return map(N, bytes, nop_map_elements);
 }
 
-unsigned char *nop_array(uint64_t N, unsigned char *start, unsigned char *end) {
-  return array(N, start, end, nop_array_elements);
+const unsigned char *nop_array(uint64_t N, byte_range bytes) {
+  return array(N, bytes, nop_array_elements);
 }
 
 } // namespace fallback
 
-unsigned char *fallback::skip_next_message(unsigned char *start,
-                                           unsigned char *end) {
-  return handle_msgpack(start, end, {});
+const unsigned char *fallback::skip_next_message(const unsigned char *start,
+                                         const  unsigned char *end) {
+  return handle_msgpack({start, end}, {});
 }
 
-unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
+const unsigned char *handle_msgpack(byte_range bytes,
                               functors f) {
+const  unsigned char *start = bytes.start;
+const  unsigned char *end = bytes.end;
   const uint64_t available = end - start;
   if (available == 0) {
     return 0;
   }
   const msgpack::type ty = msgpack::parse_type(*start);
-  const uint64_t bytes = bytes_used_fixed(ty);
-  if (available < bytes) {
+  const uint64_t bytes_used = bytes_used_fixed(ty);
+  if (available < bytes_used) {
     return 0;
   }
-  const uint64_t available_post_header = available - bytes;
+  const uint64_t available_post_header = available - bytes_used;
 
   const payload_info_t info = payload_info(ty);
   const uint64_t N = info(start);
@@ -262,7 +259,7 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   case msgpack::f: {
     // t is 0b11000010, f is 0b11000011, masked with 0x1
     f.cb_boolean(N);
-    return start + bytes;
+    return start + bytes_used;
   }
 
   case msgpack::posfixint:
@@ -271,7 +268,7 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   case msgpack::uint32:
   case msgpack::uint64: {
     f.cb_unsigned(N);
-    return start + bytes;
+    return start + bytes_used;
   }
 
   case msgpack::negfixint:
@@ -280,7 +277,7 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   case msgpack::int32:
   case msgpack::int64: {
     f.cb_signed(bitcast<uint64_t, int64_t>(N));
-    return start + bytes;
+    return start + bytes_used;
   }
 
   case msgpack::fixstr:
@@ -290,21 +287,21 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
     if (available_post_header < N) {
       return 0;
     } else {
-      f.cb_string(N, start + bytes);
-      return start + bytes + N;
+      f.cb_string(N, start + bytes_used);
+      return start + bytes_used + N;
     }
   }
 
   case msgpack::fixarray:
   case msgpack::array16:
   case msgpack::array32: {
-    return f.cb_array(N, start + bytes, end);
+    return f.cb_array(N, byte_range{start + bytes_used, end});
   }
 
   case msgpack::fixmap:
   case msgpack::map16:
   case msgpack::map32: {
-    return f.cb_map(N, start + bytes, end);
+    return f.cb_map(N, {start + bytes_used, end});
   }
 
   case msgpack::nil:
@@ -325,25 +322,42 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
     if (available_post_header < N) {
       return 0;
     }
-    return start + bytes + N;
+    return start + bytes_used + N;
   }
   }
   internal_error();
 }
 
-void foreach_map(unsigned char *start, unsigned char *end,
-                 std::function<void(unsigned char *, unsigned char *,
-                                    unsigned char *, unsigned char *)>
+bool message_is_string(byte_range bytes,
+                       const char *str) {
+  bool matched = false;
+  functors f;
+  size_t strN = strlen(str);
+
+  f.cb_string = [=, &matched](size_t N, const  unsigned char *str) {
+    if (N == strN) {
+      if (memcmp(str, str, N) == 0) {
+        matched = true;
+      }
+    }
+  };
+
+  handle_msgpack(bytes, f);
+  return matched;
+}
+
+void foreach_map(byte_range bytes,
+                 std::function<void(byte_range,byte_range)>
                      callback) {
   functors f;
   f.cb_map_elements = callback;
-  handle_msgpack(start, end, f);
+  handle_msgpack(bytes, f);
 }
 
 void foreach_array(
-    unsigned char *start, unsigned char *end,
-    std::function<void(unsigned char *, unsigned char *)> callback) {
+                   byte_range bytes,
+    std::function<void(byte_range)> callback) {
   functors f;
   f.cb_array_elements = callback;
-  handle_msgpack(start, end, f);
+  handle_msgpack(bytes, f);
 }
