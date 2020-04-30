@@ -327,38 +327,9 @@ unsigned bytes_used_fixed(msgpack::type ty) {
   }
 }
 
-unsigned bytes_used_variable(unsigned char *start, unsigned char *end) {
-  using namespace msgpack;
-  uint64_t available = end - start;
-  assert(available != 0);
-
-  msgpack::type ty = parse_type(*start);
-
-  switch (ty) {
-  case nil:
-  case f:
-  case t:
-  case negfixint:
-  case posfixint:
-  case int8:
-  case uint8:
-  case int16:
-  case uint16:
-  case int32:
-  case uint32:
-  case int64:
-  case uint64:
-    return 0;
-
-    // Others are tricky
-
-  default:
-    printf("Unimplemented bytes_used_variable for %s\n", type_name(ty));
-    internal_error();
-  }
-}
-
 struct functors {
+  functors();
+
   std::function<void(size_t, unsigned char *)> cb_string =
       [](size_t, unsigned char *) {};
 
@@ -366,24 +337,41 @@ struct functors {
 
   std::function<void(uint64_t)> cb_unsigned = [](uint64_t) {};
 
-  std::function<void(uint64_t N, unsigned char *start, unsigned char *end)>
-      cb_array = [](uint64_t, unsigned char *, unsigned char *) {};
+  std::function<unsigned char *(uint64_t N, unsigned char *start,
+                                unsigned char *end)>
+      cb_array;
 
-  std::function<void(uint64_t N, unsigned char *start, unsigned char *end)>
-      cb_map = [](uint64_t N, unsigned char *, unsigned char *) {};
+  std::function<unsigned char *(uint64_t N, unsigned char *start,
+                                unsigned char *end)>
+      cb_map;
 };
 
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
                               functors f);
 
-void handle_str_data(uint64_t N, unsigned char *bytes) {
-
-  char *tmp = (char *)malloc(N + 1);
-  memcpy(tmp, bytes, N);
-  tmp[N] = '\0';
-  printf("got a string: %s\n", tmp);
-  free(tmp);
-}
+functors::functors()
+    : cb_array{[](uint64_t N, unsigned char *start,
+                  unsigned char *end) -> unsigned char * {
+        for (uint64_t i = 0; i < N; i++) {
+          unsigned char *next = handle_msgpack(start, end, {});
+          if (!next) {
+            return 0;
+          }
+          start = next;
+        }
+        return start;
+      }},
+      cb_map{[](uint64_t N, unsigned char *start,
+                unsigned char *end) -> unsigned char * {
+        for (uint64_t i = 0; i < 2 * N; i++) {
+          unsigned char *next = handle_msgpack(start, end, {});
+          if (!next) {
+            return 0;
+          }
+          start = next;
+        }
+        return start;
+      }} {}
 
 unsigned char *
 handle_str(unsigned char *start, unsigned char *end,
@@ -429,9 +417,6 @@ handle_str(unsigned char *start, unsigned char *end,
   callback(N, start + bytes);
   return start + bytes + N;
 }
-
-void sink_sint(int64_t x) { printf("sint got %ld\n", x); }
-void sink_uint(uint64_t x) { printf("uint got %lu\n", x); }
 
 unsigned char *handle_int(unsigned char *start, unsigned char *end,
                           std::function<void(int64_t)> signed_callback,
@@ -497,22 +482,12 @@ unsigned char *handle_int(unsigned char *start, unsigned char *end,
     internal_error();
   }
 }
-unsigned char *handle_array_elements(uint64_t N, unsigned char *start,
-                                     unsigned char *end, functors f) {
 
-  // First get the size of the element and bounds check with a nop functor
-  unsigned char *next = handle_msgpack(start, end, {});
-  if (!next) {
-    return 0;
-  }
-
-  // could pass next, instead of end here
-  f.cb_array(N, start, end);
-  return next;
-}
-
-unsigned char *handle_array(unsigned char *start, unsigned char *end,
-                            functors f) {
+unsigned char *
+handle_array(unsigned char *start, unsigned char *end,
+             std::function<unsigned char *(uint64_t N, unsigned char *start,
+                                           unsigned char *end)>
+                 callback) {
   uint64_t available = end - start;
   assert(available != 0);
 
@@ -523,41 +498,36 @@ unsigned char *handle_array(unsigned char *start, unsigned char *end,
     return 0;
   }
 
+  uint64_t N;
   switch (ty) {
   case msgpack::fixarray: {
-    uint64_t N = *start & fix_mask(ty);
-    return handle_array_elements(N, start + bytes, end, f);
+    N = *start & fix_mask(ty);
+    break;
   }
 
   case msgpack::array16: {
-    uint64_t N = read_bigendian_u16(start + 1);
-    return handle_array_elements(N, start + bytes, end, f);
+    N = read_bigendian_u16(start + 1);
+    break;
   }
 
   case msgpack::array32: {
-    uint64_t N = read_bigendian_u32(start + 1);
-    return handle_array_elements(N, start + bytes, end, f);
+    N = read_bigendian_u32(start + 1);
+    break;
   }
 
   default:
     internal_error();
   }
+
+  return callback(N, start + bytes, end);
 }
 
-unsigned char *handle_map_elements(uint64_t N, unsigned char *start,
-                                   unsigned char *end, functors f) {
+unsigned char *
+handle_map(unsigned char *start, unsigned char *end,
+           std::function<unsigned char *(uint64_t N, unsigned char *start,
+                                         unsigned char *end)>
+               callback) {
 
-  // First get the size of the element and bounds check with a nop functor
-  unsigned char *next = handle_msgpack(start, end, {});
-  if (!next) {
-    return 0;
-  }
-  f.cb_map(N, start, end);
-  return next;
-}
-
-unsigned char *handle_map(unsigned char *start, unsigned char *end,
-                          functors f) {
   uint64_t available = end - start;
   assert(available != 0);
 
@@ -568,22 +538,24 @@ unsigned char *handle_map(unsigned char *start, unsigned char *end,
     return 0;
   }
 
+  uint64_t N;
   switch (ty) {
   case msgpack::fixmap: {
-    uint64_t N = *start & fix_mask(ty);
-    return handle_map_elements(N, start + bytes, end, f);
+    N = *start & fix_mask(ty);
+    break;
   }
   case msgpack::map16: {
-    uint64_t N = read_bigendian_u16(start + 1);
-    return handle_map_elements(N, start + bytes, end, f);
+    N = read_bigendian_u16(start + 1);
+    break;
   }
   case msgpack::map32: {
-    uint64_t N = read_bigendian_u32(start + 1);
-    return handle_map_elements(N, start + bytes, end, f);
+    N = read_bigendian_u32(start + 1);
+    break;
   }
   default:
     internal_error();
   }
+  return callback(N, start + bytes, end);
 }
 
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
@@ -598,12 +570,12 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   case msgpack::fixmap:
   case msgpack::map16:
   case msgpack::map32:
-    return handle_map(start, end, f);
+    return handle_map(start, end, f.cb_map);
 
   case msgpack::fixarray:
   case msgpack::array16:
   case msgpack::array32:
-    return handle_array(start, end, f);
+    return handle_array(start, end, f.cb_array);
 
   case msgpack::fixstr:
   case msgpack::str8:
@@ -641,7 +613,6 @@ TEST_CASE("hello world") {
     functors f;
     unsigned indent = 0;
     const unsigned by = 2;
-    auto nl = [&indent] { printf("\n%*s", indent, ""); };
 
     f.cb_string = [&](size_t N, unsigned char *bytes) {
       char *tmp = (char *)malloc(N + 1);
@@ -651,16 +622,14 @@ TEST_CASE("hello world") {
       free(tmp);
     };
 
-    f.cb_signed = [&](int64_t x) {
-      printf("\"%ld\"", x);
-    };
-    f.cb_unsigned = [&](uint64_t x) {
-      printf("\"%lu\"", x);
-    };
+    f.cb_signed = [&](int64_t x) { printf("\"%ld\"", x); };
+    f.cb_unsigned = [&](uint64_t x) { printf("\"%lu\"", x); };
 
-    f.cb_array = [&](uint64_t N, unsigned char *start, unsigned char *end) {
+    f.cb_array = [&](uint64_t N, unsigned char *start,
+                     unsigned char *end) -> unsigned char * {
+      printf("%*s[\n", indent, "");
       indent += by;
-      printf("[");nl();
+
       const char *sep = "";
       for (uint64_t i = 0; i < N; i++) {
         indent += by;
@@ -674,16 +643,19 @@ TEST_CASE("hello world") {
         }
       }
       indent -= by;
-      printf("]");nl();
+      printf("%*s]\n", indent, "");
 
+      return start;
     };
 
-    f.cb_map = [&](uint64_t N, unsigned char *start, unsigned char *end) {
+    f.cb_map = [&](uint64_t N, unsigned char *start,
+                   unsigned char *end) -> unsigned char * {
+      printf("%*s{\n", indent, "");
       indent += by;
-      printf("{");nl();
 
       for (uint64_t i = 0; i < 2 * N; i += 2) {
         unsigned char *start_key = start;
+        printf("%*s", indent, "");
         unsigned char *end_key = handle_msgpack(start_key, end, f);
         if (!end_key) {
           break;
@@ -698,14 +670,15 @@ TEST_CASE("hello world") {
           break;
         }
 
-        printf(", ");nl();
+        printf(",\n");
 
         start = end_value;
       }
 
       indent -= by;
-      printf("}");nl();
+      printf("%*s}\n", indent, "");
 
+      return start;
     };
     handle_msgpack(helloworld_msgpack,
                    helloworld_msgpack + helloworld_msgpack_len, f);
