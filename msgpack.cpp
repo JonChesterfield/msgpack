@@ -11,14 +11,14 @@ extern "C" {
 
 namespace msgpack {
 typedef enum {
-#define X(NAME, WIDTH) NAME,
+#define X(NAME, WIDTH, PAYLOAD) NAME,
 #include "msgpack.def"
 #undef X
 } type;
 
 const char *type_name(type ty) {
   switch (ty) {
-#define X(NAME, WIDTH)                                                         \
+#define X(NAME, WIDTH, PAYLOAD)                                                \
   case NAME:                                                                   \
     return #NAME;
 #include "msgpack.def"
@@ -115,10 +115,6 @@ msgpack::type parse_type(unsigned char x) {
   }
 }
 
-uint64_t read_via_mask_0xf(unsigned char *start) { return *start & 0xfu; }
-
-uint64_t read_via_mask_0x1f(unsigned char *start) { return *start & 0x1fu; }
-
 template <typename T, typename R> R bitcast(T x) {
   static_assert(sizeof(T) == sizeof(R), "");
   R tmp;
@@ -126,45 +122,82 @@ template <typename T, typename R> R bitcast(T x) {
   return tmp;
 }
 
-// Read 1, 2, 4, 8 bytes in big endian order into a uint64_t
-// Sign or zero extend based on the suffix
-uint64_t read_bigendian_u8(unsigned char *from) { return from[0]; }
-uint64_t read_bigendian_u16(unsigned char *from) {
+// Helper functions for reading additional payload from the header
+// Depending on the type, this can be a number of bytes, elements,
+// key-value pairs or an embedded integer.
+// Each takes a pointer to the start of the header and returns a uint64_t
 
+typedef uint64_t (*payload_info_t)(unsigned char *);
+
+// Some types don't contain embedded information, e.g. true
+// boolean may be available as a mask
+uint64_t read_zero(unsigned char *) { return 0; }
+uint64_t read_one(unsigned char *) { return 1; }
+
+// Read the first byte and zero/sign extend it
+uint64_t read_embedded_u8(unsigned char *start) { return start[0]; }
+uint64_t read_embedded_s8(unsigned char *start) {
+  int64_t res = bitcast<uint8_t, int8_t>(start[0]);
+  return bitcast<int64_t, uint64_t>(res);
+}
+
+// Read a masked part of the first byte
+uint64_t read_via_mask_0xf(unsigned char *start) { return *start & 0xfu; }
+uint64_t read_via_mask_0x1f(unsigned char *start) { return *start & 0x1fu; }
+
+// Read 1/2/4/8 bytes immediately following the type byte and zero/sign extend
+// Big endian format.
+uint64_t read_size_field_u8(unsigned char *from) {
+  from++;
+  return from[0];
+}
+uint64_t read_size_field_u16(unsigned char *from) {
+  from++;
   return (from[0] << 8u) | from[1];
 }
-uint64_t read_bigendian_u32(unsigned char *from) {
-
+uint64_t read_size_field_u32(unsigned char *from) {
+  from++;
   return (from[0] << 24u) | (from[1] << 16u) | (from[2] << 8u) |
          (from[3] << 0u);
 }
-uint64_t read_bigendian_u64(unsigned char *from) {
-
+uint64_t read_size_field_u64(unsigned char *from) {
+  from++;
   return ((uint64_t)from[0] << 56u) | ((uint64_t)from[1] << 48u) |
          ((uint64_t)from[2] << 40u) | ((uint64_t)from[3] << 32u) |
          (from[4] << 24u) | (from[5] << 16u) | (from[6] << 8u) |
          (from[7] << 0u);
 }
 
-uint64_t read_bigendian_s8(unsigned char *from) {
-  uint8_t u = read_bigendian_u8(from);
+uint64_t read_size_field_s8(unsigned char *from) {
+  uint8_t u = read_size_field_u8(from);
   int64_t res = bitcast<uint8_t, int8_t>(u);
   return bitcast<int64_t, uint64_t>(res);
 }
-uint64_t read_bigendian_s16(unsigned char *from) {
-  uint16_t u = read_bigendian_u16(from);
+uint64_t read_size_field_s16(unsigned char *from) {
+  uint16_t u = read_size_field_u16(from);
   int64_t res = bitcast<uint16_t, int16_t>(u);
   return bitcast<int64_t, uint64_t>(res);
 }
-uint64_t read_bigendian_s32(unsigned char *from) {
-  uint32_t u = read_bigendian_u32(from);
+uint64_t read_size_field_s32(unsigned char *from) {
+  uint32_t u = read_size_field_u32(from);
   int64_t res = bitcast<uint32_t, int32_t>(u);
   return bitcast<int64_t, uint64_t>(res);
 }
-uint64_t read_bigendian_s64(unsigned char *from) {
-  uint64_t u = read_bigendian_u64(from);
+uint64_t read_size_field_s64(unsigned char *from) {
+  uint64_t u = read_size_field_u64(from);
   int64_t res = bitcast<uint64_t, int64_t>(u);
   return bitcast<int64_t, uint64_t>(res);
+}
+
+payload_info_t payload_info(msgpack::type ty) {
+  using namespace msgpack;
+  switch (ty) {
+#define X(NAME, WIDTH, PAYLOAD)                                                \
+  case NAME:                                                                   \
+    return PAYLOAD;
+#include "msgpack.def"
+#undef X
+  }
 }
 
 // Only failure mode is going to be out of bounds
@@ -173,7 +206,7 @@ uint64_t read_bigendian_s64(unsigned char *from) {
 unsigned bytes_used_fixed(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
-#define X(NAME, WIDTH)                                                         \
+#define X(NAME, WIDTH, PAYLOAD)                                                \
   case NAME:                                                                   \
     return WIDTH;
 #include "msgpack.def"
@@ -247,18 +280,19 @@ handle_str(unsigned char *start, unsigned char *end,
   switch (ty) {
   case msgpack::fixstr: {
     N = read_via_mask_0x1f(start);
+    
     break;
   }
   case msgpack::str8: {
-    N = read_bigendian_u8(start + 1);
+    N = read_size_field_u8(start);
     break;
   }
   case msgpack::str16: {
-    N = read_bigendian_u16(start + 1);
+    N = read_size_field_u16(start);
     break;
   }
   case msgpack::str32: {
-    N = read_bigendian_u32(start + 1);
+    N = read_size_field_u32(start);
     break;
   }
 
@@ -278,19 +312,22 @@ unsigned char *handle_boolean(unsigned char *start, unsigned char *end,
   uint64_t available = end - start;
   assert(available != 0);
   msgpack::type ty = parse_type(*start);
+  uint64_t N;
   switch (ty) {
   case msgpack::t: {
-    callback(true);
+    N = 1;
     break;
   }
   case msgpack::f: {
-    callback(false);
+    N = 0;
     break;
   }
 
   default:
     internal_error();
   }
+
+  callback(!!N);
   assert(bytes_used_fixed(ty) == 1);
   return start + 1;
 }
@@ -313,25 +350,24 @@ unsigned char *handle_uint(unsigned char *start, unsigned char *end,
   switch (ty) {
   case msgpack::posfixint: {
     // considered 'unsigned' by spec
-
-    N = read_bigendian_u8(start);
+    N = read_embedded_u8(start);
     break;
   }
 
   case msgpack::uint8: {
-    N = read_bigendian_u8(start + 1);
+    N = read_size_field_u8(start);
     break;
   }
   case msgpack::uint16: {
-    N = read_bigendian_u16(start + 1);
+    N = read_size_field_u16(start);
     break;
   }
   case msgpack::uint32: {
-    N = read_bigendian_u32(start + 1);
+    N = read_size_field_u32(start);
     break;
   }
   case msgpack::uint64: {
-    N = read_bigendian_u64(start + 1);
+    N = read_size_field_u64(start);
     break;
   }
 
@@ -361,23 +397,23 @@ unsigned char *handle_sint(unsigned char *start, unsigned char *end,
   switch (ty) {
   case msgpack::negfixint: {
     // considered 'signed' by spec
-    N = read_bigendian_s8(start);
+    N = read_embedded_s8(start);
     break;
   }
   case msgpack::int8: {
-    N = read_bigendian_s8(start + 1);
+    N = read_size_field_s8(start);
     break;
   }
   case msgpack::int16: {
-    N = read_bigendian_s16(start + 1);
+    N = read_size_field_s16(start);
     break;
   }
   case msgpack::int32: {
-    N = read_bigendian_s32(start + 1);
+    N = read_size_field_s32(start);
     break;
   }
   case msgpack::int64: {
-    N = read_bigendian_s64(start + 1);
+    N = read_size_field_s64(start);
     break;
   }
   default:
@@ -412,12 +448,12 @@ handle_array(unsigned char *start, unsigned char *end,
   }
 
   case msgpack::array16: {
-    N = read_bigendian_u16(start + 1);
+    N = read_size_field_u16(start);
     break;
   }
 
   case msgpack::array32: {
-    N = read_bigendian_u32(start + 1);
+    N = read_size_field_u32(start);
     break;
   }
 
@@ -451,11 +487,11 @@ handle_map(unsigned char *start, unsigned char *end,
     break;
   }
   case msgpack::map16: {
-    N = read_bigendian_u16(start + 1);
+    N = read_size_field_u16(start);
     break;
   }
   case msgpack::map32: {
-    N = read_bigendian_u32(start + 1);
+    N = read_size_field_u32(start);
     break;
   }
   default:
@@ -491,17 +527,17 @@ unsigned char *handle_unimplemented(unsigned char *start, unsigned char *end) {
   }
   case msgpack::ext8:
   case msgpack::bin8: {
-    N = read_bigendian_u8(start + 1);
+    N = read_size_field_u8(start);
     break;
   }
   case msgpack::ext16:
   case msgpack::bin16: {
-    N = read_bigendian_u16(start + 1);
+    N = read_size_field_u16(start);
     break;
   }
   case msgpack::ext32:
   case msgpack::bin32: {
-    N = read_bigendian_u32(start + 1);
+    N = read_size_field_u32(start);
     break;
   }
   default:
