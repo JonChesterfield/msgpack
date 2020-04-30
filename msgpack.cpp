@@ -175,18 +175,66 @@ payload_info_t payload_info(msgpack::type ty) {
 // Return NULL on out of bounds, otherwise start of the next entry
 
 namespace fallback {
+
+unsigned char *skip_next_message(unsigned char *start, unsigned char *end);
+
 void nop_string(size_t, unsigned char *) {}
 void nop_signed(int64_t) {}
 void nop_unsigned(uint64_t) {}
 void nop_boolean(bool) {}
-unsigned char *nop_array(uint64_t N, unsigned char *start, unsigned char *end);
-unsigned char *nop_map(uint64_t N, unsigned char *start, unsigned char *end) {
-  // A map is equivalent to two arrays of length N
-  unsigned char *next = nop_array(N, start, end);
-  if (!next) {
-    return 0;
+
+void nop_array_elements(unsigned char *, unsigned char *) {}
+
+void nop_map_elements(unsigned char *, unsigned char *, unsigned char *,
+                      unsigned char *) {}
+
+unsigned char *
+array(uint64_t N, unsigned char *start, unsigned char *end,
+      std::function<void(unsigned char *, unsigned char *)> callback) {
+  for (uint64_t i = 0; i < N; i++) {
+    unsigned char *next = skip_next_message(start, end);
+    if (!next) {
+      return 0;
+    }
+    callback(start, end);
+
+    start = next;
   }
-  return nop_array(N, next, end);
+  return start;
+}
+
+unsigned char *map(uint64_t N, unsigned char *start, unsigned char *end,
+                   std::function<void(unsigned char *, unsigned char *,
+                                      unsigned char *, unsigned char *)>
+                       callback) {
+
+  for (uint64_t i = 0; i < N; i++) {
+    unsigned char *start_key = start;
+    unsigned char *end_key = skip_next_message(start_key, end);
+
+    if (!end_key) {
+      break;
+    }
+
+    unsigned char *start_value = end_key;
+    unsigned char *end_value = skip_next_message(start_value, end);
+
+    if (!end_value) {
+      break;
+    }
+
+    callback(start_key, end_key, start_value, end_value);
+
+    start = end_value;
+  }
+  return start;
+}
+unsigned char *nop_map(uint64_t N, unsigned char *start, unsigned char *end) {
+  return map(N, start, end, nop_map_elements);
+}
+
+unsigned char *nop_array(uint64_t N, unsigned char *start, unsigned char *end) {
+  return array(N, start, end, nop_array_elements);
 }
 
 } // namespace fallback
@@ -201,28 +249,33 @@ struct functors {
 
   std::function<void(bool)> cb_boolean = fallback::nop_boolean;
 
-  std::function<unsigned char *(uint64_t N, unsigned char *start,
-                                unsigned char *end)>
-      cb_array = fallback::nop_array;
+  std::function<void(unsigned char *, unsigned char *, unsigned char *,
+                     unsigned char *)>
+      cb_map_elements = fallback::nop_map_elements;
+
+  std::function<void(unsigned char *, unsigned char *)> cb_array_elements =
+      fallback::nop_array_elements;
 
   std::function<unsigned char *(uint64_t N, unsigned char *start,
                                 unsigned char *end)>
-      cb_map = fallback::nop_map;
+      cb_array = [=](uint64_t N, unsigned char *start, unsigned char *end) {
+        return fallback::array(N, start, end, this->cb_array_elements);
+      };
+
+  std::function<unsigned char *(uint64_t N, unsigned char *start,
+                                unsigned char *end)>
+
+      cb_map = [=](uint64_t N, unsigned char *start, unsigned char *end) {
+        return fallback::map(N, start, end, this->cb_map_elements);
+      };
 };
 
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
                               functors f);
 
-unsigned char *fallback::nop_array(uint64_t N, unsigned char *start,
-                                   unsigned char *end) {
-  for (uint64_t i = 0; i < N; i++) {
-    unsigned char *next = handle_msgpack(start, end, {});
-    if (!next) {
-      return 0;
-    }
-    start = next;
-  }
-  return start;
+unsigned char *fallback::skip_next_message(unsigned char *start,
+                                           unsigned char *end) {
+  return handle_msgpack(start, end, {});
 }
 
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
@@ -406,29 +459,15 @@ void on_matching_string_key_apply_action_to_value(
     }
   };
 
-  f.cb_map = [&](uint64_t N, unsigned char *start,
-                 unsigned char *end) -> unsigned char * {
-    for (uint64_t i = 0; i < N; i++) {
-      matched = false;
-      unsigned char *start_key = start;
-      unsigned char *end_key = handle_msgpack(start_key, end, f);
-      if (!end_key) {
-        return 0;
-      }
-
-      if (matched) {
-        action(end_key, end);
-      }
-
-      // Skip over the value
-      unsigned char *start_value = end_key;
-      unsigned char *end_value = handle_msgpack(start_value, end, f);
-      if (!end_value) {
-        return 0;
-      }
-      start = end_value;
+  f.cb_map_elements = [&](unsigned char *start_key, unsigned char *end_key,
+                          unsigned char *start_value,
+                          unsigned char *end_value) {
+    matched = false;
+    unsigned char *r = handle_msgpack(start_key, end_key, f);
+    assert(r == start_value);
+    if (matched) {
+      action(start_value, end_value);
     }
-    return start;
   };
 
   handle_msgpack(start, end, f);
@@ -563,8 +602,10 @@ TEST_CASE("hello world") {
 
   SECTION("run it big") {
     printf("bigger\n");
-    json_print(manykernels_msgpack, manykernels_msgpack + manykernels_msgpack_len);
+    /*
+    json_print(manykernels_msgpack,
+               manykernels_msgpack + manykernels_msgpack_len);
+    */
   }
-
 }
 #endif
