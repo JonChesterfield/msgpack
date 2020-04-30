@@ -262,369 +262,70 @@ functors::functors()
         return start;
       }} {}
 
-unsigned char *
-handle_str(unsigned char *start, unsigned char *end,
-           std::function<void(size_t, unsigned char *)> callback) {
-  uint64_t available = end - start;
-  assert(available != 0);
-
-  msgpack::type ty = parse_type(*start);
-  uint64_t bytes = bytes_used_fixed(ty);
-
-  if (available < bytes) {
-    return 0;
-  }
-  uint64_t available_post_header = available - bytes;
-
-  payload_info_t info = payload_info(ty);
-  uint64_t N = info(start);
-  switch (ty) {
-  case msgpack::fixstr: {
-    N = read_via_mask_0x1f(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::str8: {
-    N = read_size_field_u8(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::str16: {
-    N = read_size_field_u16(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::str32: {
-    N = read_size_field_u32(start);
-    assert(N == info(start));
-    break;
-  }
-
-  default:
-    internal_error();
-  }
-
-  if (available_post_header < N) {
-    return 0;
-  }
-  callback(N, start + bytes);
-  return start + bytes + N;
-}
-
-unsigned char *handle_boolean(unsigned char *start, unsigned char *end,
-                              std::function<void(bool)> callback) {
-  uint64_t available = end - start;
-  assert(available != 0);
-  msgpack::type ty = parse_type(*start);
-  payload_info_t info = payload_info(ty);
-  uint64_t N = info(start);
-  switch (ty) {
-  case msgpack::t: {
-    N = 1;
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::f: {
-    N = 0;
-    assert(N == info(start));
-    break;
-  }
-
-  default:
-    internal_error();
-  }
-
-  callback(!!N);
-  assert(bytes_used_fixed(ty) == 1);
-  return start + 1;
-}
-
-unsigned char *handle_uint(unsigned char *start, unsigned char *end,
-                           std::function<void(uint64_t)> unsigned_callback
-
-) {
-  uint64_t available = end - start;
-  assert(available != 0);
-
-  msgpack::type ty = parse_type(*start);
-  uint64_t bytes = bytes_used_fixed(ty);
-
-  if (available < bytes) {
-    return 0;
-  }
-
-  payload_info_t info = payload_info(ty);
-  uint64_t N = info(start);
-  switch (ty) {
-  case msgpack::posfixint: {
-    // considered 'unsigned' by spec
-    N = read_embedded_u8(start);
-    assert(N == info(start));
-    break;
-  }
-
-  case msgpack::uint8: {
-    N = read_size_field_u8(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::uint16: {
-    N = read_size_field_u16(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::uint32: {
-    N = read_size_field_u32(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::uint64: {
-    N = read_size_field_u64(start);
-    assert(N == info(start));
-    break;
-  }
-
-  default:
-    internal_error();
-  }
-
-  unsigned_callback(N);
-  return start + bytes;
-}
-
-unsigned char *handle_sint(unsigned char *start, unsigned char *end,
-                           std::function<void(int64_t)> signed_callback
-
-) {
-  uint64_t available = end - start;
-  assert(available != 0);
-
-  msgpack::type ty = parse_type(*start);
-  uint64_t bytes = bytes_used_fixed(ty);
-
-  if (available < bytes) {
-    return 0;
-  }
-
-  payload_info_t info = payload_info(ty);
-  uint64_t N = info(start);
-  switch (ty) {
-  case msgpack::negfixint: {
-    // considered 'signed' by spec
-    N = read_embedded_s8(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::int8: {
-    N = read_size_field_s8(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::int16: {
-    N = read_size_field_s16(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::int32: {
-    N = read_size_field_s32(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::int64: {
-    N = read_size_field_s64(start);
-    assert(N == info(start));
-    break;
-  }
-  default:
-    internal_error();
-  }
-
-  signed_callback(bitcast<uint64_t, int64_t>(N));
-
-  return start + bytes;
-}
-
-unsigned char *
-handle_array(unsigned char *start, unsigned char *end,
-             std::function<unsigned char *(uint64_t N, unsigned char *start,
-                                           unsigned char *end)>
-                 callback) {
-  uint64_t available = end - start;
-  assert(available != 0);
-
-  msgpack::type ty = parse_type(*start);
-  uint64_t bytes = bytes_used_fixed(ty);
-
-  if (available < bytes) {
-    return 0;
-  }
-
-  payload_info_t info = payload_info(ty);
-  uint64_t N = info(start);
-  switch (ty) {
-  case msgpack::fixarray: {
-    N = read_via_mask_0xf(start);
-    assert(N == info(start));
-    break;
-  }
-
-  case msgpack::array16: {
-    N = read_size_field_u16(start);
-    assert(N == info(start));
-    break;
-  }
-
-  case msgpack::array32: {
-    N = read_size_field_u32(start);
-    assert(N == info(start));
-    break;
-  }
-
-  default:
-    internal_error();
-  }
-
-  return callback(N, start + bytes, end);
-}
-
-unsigned char *
-handle_map(unsigned char *start, unsigned char *end,
-           std::function<unsigned char *(uint64_t N, unsigned char *start,
-                                         unsigned char *end)>
-               callback) {
-
-  uint64_t available = end - start;
-  assert(available != 0);
-
-  msgpack::type ty = parse_type(*start);
-  uint64_t bytes = bytes_used_fixed(ty);
-
-  if (available < bytes) {
-    return 0;
-  }
-
-  payload_info_t info = payload_info(ty);
-  uint64_t N = info(start);
-  switch (ty) {
-  case msgpack::fixmap: {
-    N = read_via_mask_0xf(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::map16: {
-    N = read_size_field_u16(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::map32: {
-    N = read_size_field_u32(start);
-    assert(N == info(start));
-    break;
-  }
-  default:
-    internal_error();
-  }
-  return callback(N, start + bytes, end);
-}
-
-unsigned char *handle_unimplemented(unsigned char *start, unsigned char *end) {
-  uint64_t available = end - start;
-  assert(available != 0);
-  msgpack::type ty = parse_type(*start);
-
-  uint64_t bytes = bytes_used_fixed(ty);
-  if (available < bytes) {
-    return 0;
-  }
-  uint64_t available_post_header = available - bytes;
-
-  payload_info_t info = payload_info(ty);
-  uint64_t N = info(start);
-  switch (ty) {
-  case msgpack::nil:
-  case msgpack::never_used:
-  case msgpack::float32:
-  case msgpack::float64:
-  case msgpack::fixext1:
-  case msgpack::fixext2:
-  case msgpack::fixext4:
-  case msgpack::fixext8:
-  case msgpack::fixext16: {
-    N = 0;
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::ext8:
-  case msgpack::bin8: {
-    N = read_size_field_u8(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::ext16:
-  case msgpack::bin16: {
-    N = read_size_field_u16(start);
-    assert(N == info(start));
-    break;
-  }
-  case msgpack::ext32:
-  case msgpack::bin32: {
-    N = read_size_field_u32(start);
-    assert(N == info(start));
-    break;
-  }
-  default:
-    internal_error();
-  }
-
-  if (available_post_header < N) {
-    return 0;
-  }
-
-  return start + bytes + N;
-}
-
 unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
                               functors f) {
-  uint64_t available = end - start;
+  const uint64_t available = end - start;
   if (available == 0) {
     return 0;
   }
-  msgpack::type ty = parse_type(*start);
+  const msgpack::type ty = parse_type(*start);
+  const uint64_t bytes = bytes_used_fixed(ty);
+  if (available < bytes) {
+    return 0;
+  }
+  const uint64_t available_post_header = available - bytes;
+
+  const payload_info_t info = payload_info(ty);
+  const uint64_t N = info(start);
 
   switch (ty) {
   case msgpack::t:
-  case msgpack::f:
-    return handle_boolean(start, end, f.cb_boolean);
+  case msgpack::f: {
+    f.cb_boolean(!!N);
+    return start + bytes;
+  }
 
   case msgpack::posfixint:
   case msgpack::uint8:
   case msgpack::uint16:
   case msgpack::uint32:
-  case msgpack::uint64:
-    return handle_uint(start, end, f.cb_unsigned);
+  case msgpack::uint64: {
+    f.cb_unsigned(N);
+    return start + bytes;
+  }
 
   case msgpack::negfixint:
   case msgpack::int8:
   case msgpack::int16:
   case msgpack::int32:
-  case msgpack::int64:
-    return handle_sint(start, end, f.cb_signed);
+  case msgpack::int64: {
+    f.cb_signed(bitcast<uint64_t, int64_t>(N));
+    return start + bytes;
+  }
 
   case msgpack::fixstr:
   case msgpack::str8:
   case msgpack::str16:
-  case msgpack::str32:
-    return handle_str(start, end, f.cb_string);
+  case msgpack::str32: {
+    if (available_post_header < N) {
+      return 0;
+    } else {
+      f.cb_string(N, start + bytes);
+      return start + bytes + N;
+    }
+  }
 
   case msgpack::fixarray:
   case msgpack::array16:
-  case msgpack::array32:
-    return handle_array(start, end, f.cb_array);
+  case msgpack::array32: {
+    return f.cb_array(N, start + bytes, end);
+  }
 
   case msgpack::fixmap:
   case msgpack::map16:
-  case msgpack::map32:
-    return handle_map(start, end, f.cb_map);
+  case msgpack::map32: {
+    return f.cb_map(N, start + bytes, end);
+  }
 
   case msgpack::nil:
   case msgpack::bin8:
@@ -640,8 +341,13 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   case msgpack::fixext4:
   case msgpack::fixext8:
   case msgpack::fixext16:
-  case msgpack::never_used:
-    return handle_unimplemented(start, end);
+  case msgpack::never_used: {
+    if (available_post_header < N) {
+      return 0;
+    }
+    // No callback
+    return start + bytes + N;
+  }
   }
 }
 
@@ -771,8 +477,7 @@ TEST_CASE("hello world") {
   }
 
   SECTION("run it") {
-    // json_print(helloworld_msgpack, helloworld_msgpack +
-    // helloworld_msgpack_len);
+    json_print(helloworld_msgpack, helloworld_msgpack + helloworld_msgpack_len);
   }
 
   SECTION("build name : segment size map") {
