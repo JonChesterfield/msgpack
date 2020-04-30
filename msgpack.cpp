@@ -1,7 +1,3 @@
-#ifndef NOCATCH
-#include "catch.hpp"
-#endif
-
 #include <cassert>
 #include <cstdint>
 #include <cstring>

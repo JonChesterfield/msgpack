@@ -11,7 +11,7 @@ $CXX -O1 msgpack_test.cpp -c -o msgpack_test.o
 $CC helloworld_msgpack.c -c -o helloworld_msgpack.o
 $CC manykernels_msgpack.c -c -o manykernels_msgpack.o
 
-$CXX -DNOCATCH -DNDEBUG -O3 msgpack.cpp -emit-llvm -S -c -o msgpack.ll
+$CXX -DNDEBUG -O3 msgpack.cpp -emit-llvm -S -c -o msgpack.ll
 llc msgpack.ll -o msgpack.s
 
 
