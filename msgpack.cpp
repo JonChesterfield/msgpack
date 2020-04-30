@@ -142,25 +142,25 @@ uint64_t read_bigendian_u64(unsigned char *from) {
          (from[7] << 0u);
 }
 
-int64_t read_bigendian_s8(unsigned char *from) {
+uint64_t read_bigendian_s8(unsigned char *from) {
   uint8_t u = read_bigendian_u8(from);
   int64_t res = bitcast<uint8_t, int8_t>(u);
-  return res;
+  return bitcast<int64_t, uint64_t>(res);
 }
-int64_t read_bigendian_s16(unsigned char *from) {
+uint64_t read_bigendian_s16(unsigned char *from) {
   uint16_t u = read_bigendian_u16(from);
   int64_t res = bitcast<uint16_t, int16_t>(u);
-  return res;
+  return bitcast<int64_t, uint64_t>(res);
 }
-int64_t read_bigendian_s32(unsigned char *from) {
+uint64_t read_bigendian_s32(unsigned char *from) {
   uint32_t u = read_bigendian_u32(from);
   int64_t res = bitcast<uint32_t, int32_t>(u);
-  return res;
+  return bitcast<int64_t, uint64_t>(res);
 }
-int64_t read_bigendian_s64(unsigned char *from) {
+uint64_t read_bigendian_s64(unsigned char *from) {
   uint64_t u = read_bigendian_u64(from);
   int64_t res = bitcast<uint64_t, int64_t>(u);
-  return res;
+  return bitcast<int64_t, uint64_t>(res);
 }
 
 // Only failure mode is going to be out of bounds
@@ -381,39 +381,42 @@ unsigned char *handle_uint(unsigned char *start, unsigned char *end,
     return 0;
   }
 
+  uint64_t N;
   switch (ty) {
   case msgpack::posfixint: {
     // considered 'unsigned' by spec
-    unsigned_callback(read_bigendian_u8(start));
+
+    N = read_bigendian_u8(start);
     break;
   }
 
   case msgpack::uint8: {
-    unsigned_callback(read_bigendian_u8(start + 1));
+    N = read_bigendian_u8(start + 1);
     break;
   }
   case msgpack::uint16: {
-    unsigned_callback(read_bigendian_u16(start + 1));
+    N = read_bigendian_u16(start + 1);
     break;
   }
   case msgpack::uint32: {
-    unsigned_callback(read_bigendian_u32(start + 1));
+    N = read_bigendian_u32(start + 1);
     break;
   }
   case msgpack::uint64: {
-    unsigned_callback(read_bigendian_u64(start + 1));
+    N = read_bigendian_u64(start + 1);
     break;
   }
 
   default:
     internal_error();
   }
+
+  unsigned_callback(N);
   return start + bytes;
 }
 
 unsigned char *handle_sint(unsigned char *start, unsigned char *end,
                            std::function<void(int64_t)> signed_callback
-                           
 
 ) {
   uint64_t available = end - start;
@@ -426,33 +429,35 @@ unsigned char *handle_sint(unsigned char *start, unsigned char *end,
     return 0;
   }
 
+  uint64_t N;
   switch (ty) {
   case msgpack::negfixint: {
     // considered 'signed' by spec
-    signed_callback(read_bigendian_s8(start));
+    N = read_bigendian_s8(start);
     break;
   }
   case msgpack::int8: {
-    signed_callback(read_bigendian_s8(start + 1));
+    N = read_bigendian_s8(start + 1);
     break;
   }
   case msgpack::int16: {
-    signed_callback(read_bigendian_s16(start + 1));
+    N = read_bigendian_s16(start + 1);
     break;
   }
   case msgpack::int32: {
-    signed_callback(read_bigendian_s32(start + 1));
+    N = read_bigendian_s32(start + 1);
     break;
   }
   case msgpack::int64: {
-    signed_callback(read_bigendian_s64(start + 1));
+    N = read_bigendian_s64(start + 1);
     break;
   }
-
-
   default:
     internal_error();
   }
+
+  signed_callback(bitcast<uint64_t, int64_t>(N));
+
   return start + bytes;
 }
 
@@ -600,14 +605,14 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   case msgpack::uint16:
   case msgpack::uint32:
   case msgpack::uint64:
-    return handle_uint(start, end,  f.cb_unsigned);
+    return handle_uint(start, end, f.cb_unsigned);
 
   case msgpack::negfixint:
   case msgpack::int8:
   case msgpack::int16:
   case msgpack::int32:
   case msgpack::int64:
-    return handle_sint(start, end, f.cb_signed);  
+    return handle_sint(start, end, f.cb_signed);
 
   case msgpack::fixstr:
   case msgpack::str8:
