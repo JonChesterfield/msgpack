@@ -115,16 +115,9 @@ msgpack::type parse_type(unsigned char x) {
   }
 }
 
+uint64_t read_via_mask_0xf(unsigned char *start) { return *start & 0xfu; }
 
-uint64_t read_via_mask_0xf(unsigned char * start)
-{
-  return *start & 0xfu;
-}
-
-uint64_t read_via_mask_0x1f(unsigned char * start)
-{
-  return *start & 0x1fu;
-}
+uint64_t read_via_mask_0x1f(unsigned char *start) { return *start & 0x1fu; }
 
 template <typename T, typename R> R bitcast(T x) {
   static_assert(sizeof(T) == sizeof(R), "");
@@ -177,95 +170,17 @@ uint64_t read_bigendian_s64(unsigned char *from) {
 // Only failure mode is going to be out of bounds
 // Return NULL on out of bounds, otherwise start of the next entry
 
-
-unsigned bytes_used_fixed2(msgpack::type ty) {
+unsigned bytes_used_fixed(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
-#define X(NAME, WIDTH) case NAME: return WIDTH;
+#define X(NAME, WIDTH)                                                         \
+  case NAME:                                                                   \
+    return WIDTH;
 #include "msgpack.def"
 #undef X
   };
 }
 
-unsigned bytes_used_fixed1(msgpack::type ty) {
-  using namespace msgpack;
-  switch (ty) {
-
-  case nil:
-  case f:
-  case t:
-  case never_used:
-  case negfixint:
-  case posfixint:
-  case fixarray:
-  case fixmap:
-  case fixstr:
-    return 1;
-
-  case int8:
-  case uint8:
-    return 2;
-  case int16:
-  case uint16:
-    return 3;
-  case int32:
-  case uint32:
-    return 5;
-  case int64:
-  case uint64:
-    return 9;
-
-  case float32:
-    return 5;
-  case float64:
-    return 9;
-
-  case fixext1:
-    return 3;
-  case fixext2:
-    return 4;
-  case fixext4:
-    return 6;
-  case fixext8:
-    return 10;
-  case fixext16:
-    return 18;
-
-  case ext8:
-    return 3;
-  case ext16:
-    return 4;
-  case ext32:
-    return 6;
-
-  case bin8:
-  case str8:
-    return 2;
-
-  case bin16:
-  case array16:
-  case map16:
-  case str16:
-    return 3;
-
-  case bin32:
-  case array32:
-  case map32:
-  case str32:
-    return 5;
-
-  default:
-    printf("Unimplemented bytes_used_fixed for %s\n", type_name(ty));
-    internal_error();
-  }
-}
-
-  unsigned bytes_used_fixed(msgpack::type ty) {
-   unsigned r = bytes_used_fixed2(ty);
-   assert(r == bytes_used_fixed1(ty));
-   return r;
- }
-  
 struct functors {
   functors();
 
@@ -787,14 +702,6 @@ TEST_CASE("hello world") {
     CHECK(parse_type(start) == msgpack::fixmap);
   }
 
-  SECTION("used")
-    {
-      for (unsigned i = 0; i < 256; i++)
-        {
-          CHECK(bytes_used_fixed1(parse_type(i)) ==
-                bytes_used_fixed2(parse_type(i)));
-        }
-    }
   SECTION("run it") {
     // json_print(helloworld_msgpack, helloworld_msgpack +
     // helloworld_msgpack_len);
