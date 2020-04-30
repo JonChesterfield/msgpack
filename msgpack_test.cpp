@@ -1,5 +1,5 @@
 #include "catch.hpp"
-#include "msgpack.hpp"
+#include "msgpack.h"
 
 extern "C" {
 #include "helloworld_msgpack.h"
