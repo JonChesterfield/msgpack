@@ -46,7 +46,7 @@ typedef enum {
   map16,
   map32,
   negfixint,
-  failure,
+  never_used,
 } type;
 
 const char *type_name(type ty) {
@@ -123,11 +123,16 @@ const char *type_name(type ty) {
     return "map32";
   case negfixint:
     return "negfixint";
-  case failure:
-    return "failure";
+  case never_used:
+    return "never_used";
   }
 }
 } // namespace msgpack
+
+[[noreturn]] void internal_error(void) {
+  printf("internal error\n");
+  exit(1);
+}
 
 msgpack::type parse_type(unsigned char x) {
   using namespace msgpack;
@@ -143,7 +148,7 @@ msgpack::type parse_type(unsigned char x) {
   case 0xc0:
     return nil;
   case 0xc1:
-    return failure;
+    return never_used;
   case 0xc2:
     return f;
   case 0xc3:
@@ -206,14 +211,10 @@ msgpack::type parse_type(unsigned char x) {
     return map32;
   case 0xe0 ... 0xff:
     return negfixint;
-  default:
-    return failure;
-  }
-}
 
-[[noreturn]] void internal_error(void) {
-  printf("internal error\n");
-  exit(1);
+  default:
+    internal_error();
+  }
 }
 
 uint8_t read_bigendian_u8(unsigned char *from) { return from[0]; }
@@ -285,14 +286,17 @@ unsigned bytes_used_fixed(msgpack::type ty) {
   case nil:
   case f:
   case t:
-    return 1;
-
+  case never_used:
   case negfixint:
   case posfixint:
+  case fixarray:
+  case fixmap:
+  case fixstr:
     return 1;
+    
   case int8:
   case uint8:
-    return 2;
+    return 2;   
   case int16:
   case uint16:
     return 3;
@@ -308,10 +312,23 @@ unsigned bytes_used_fixed(msgpack::type ty) {
   case float64:
     return 9;
 
-  case fixarray:
-  case fixmap:
-  case fixstr:
-    return 1;
+  case fixext1:
+    return 3;
+  case fixext2:
+    return 4;
+  case fixext4:
+    return 6;
+  case fixext8:
+    return 10;
+  case fixext16:
+    return 18;
+
+  case ext8:
+    return 3;
+  case ext16:
+    return 4;
+  case ext32:
+    return 6;
 
   case bin8:
   case str8:
@@ -344,6 +361,8 @@ struct functors {
   std::function<void(int64_t)> cb_signed = [](int64_t) {};
 
   std::function<void(uint64_t)> cb_unsigned = [](uint64_t) {};
+
+  std::function<void(bool)> cb_boolean = [](bool) {};
 
   std::function<unsigned char *(uint64_t N, unsigned char *start,
                                 unsigned char *end)>
@@ -423,6 +442,28 @@ handle_str(unsigned char *start, unsigned char *end,
   }
   callback(N, start + bytes);
   return start + bytes + N;
+}
+
+unsigned char *handle_boolean(unsigned char *start, unsigned char *end,
+                              std::function<void(bool)> callback) {
+  uint64_t available = end - start;
+  assert(available != 0);
+  msgpack::type ty = parse_type(*start);
+  switch (ty) {
+  case msgpack::t: {
+    callback(true);
+    break;
+  }
+  case msgpack::f: {
+    callback(false);
+    break;
+  }
+
+  default:
+    internal_error();
+  }
+  assert(bytes_used_fixed(ty) == 1);
+  return start + 1;
 }
 
 unsigned char *handle_int(unsigned char *start, unsigned char *end,
@@ -566,7 +607,7 @@ handle_map(unsigned char *start, unsigned char *end,
   return callback(N, start + bytes, end);
 }
 
-unsigned char *handle_other(unsigned char *start, unsigned char *end) {
+unsigned char *handle_unimplemented(unsigned char *start, unsigned char *end) {
   uint64_t available = end - start;
   assert(available != 0);
   msgpack::type ty = parse_type(*start);
@@ -579,26 +620,33 @@ unsigned char *handle_other(unsigned char *start, unsigned char *end) {
 
   uint64_t N;
   switch (ty) {
-
+  case msgpack::nil:
+  case msgpack::never_used:
   case msgpack::float32:
-  case msgpack::float64: {
+  case msgpack::float64:
+  case msgpack::fixext1:
+  case msgpack::fixext2:
+  case msgpack::fixext4:
+  case msgpack::fixext8:
+  case msgpack::fixext16: {
     N = 0;
     break;
   }
-
+  case msgpack::ext8:
   case msgpack::bin8: {
     N = read_bigendian_u8(start + 1);
     break;
   }
+  case msgpack::ext16:
   case msgpack::bin16: {
     N = read_bigendian_u16(start + 1);
     break;
   }
+  case msgpack::ext32:
   case msgpack::bin32: {
     N = read_bigendian_u32(start + 1);
     break;
   }
-
   default:
     internal_error();
   }
@@ -619,6 +667,10 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   msgpack::type ty = parse_type(*start);
 
   switch (ty) {
+  case msgpack::t:
+  case msgpack::f:
+    return handle_boolean(start, end, f.cb_boolean);
+
   case msgpack::posfixint:
   case msgpack::int8:
   case msgpack::int16:
@@ -647,16 +699,22 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   case msgpack::map32:
     return handle_map(start, end, f.cb_map);
 
+  case msgpack::nil:
   case msgpack::bin8:
   case msgpack::bin16:
   case msgpack::bin32:
   case msgpack::float32:
   case msgpack::float64:
-    return handle_other(start, end);
-
-  default:
-    printf("Unimplemented handler for %s\n", type_name(parse_type(*start)));
-    internal_error();
+  case msgpack::ext8:
+  case msgpack::ext16:
+  case msgpack::ext32:
+  case msgpack::fixext1:
+  case msgpack::fixext2:
+  case msgpack::fixext4:
+  case msgpack::fixext8:
+  case msgpack::fixext16:
+  case msgpack::never_used:
+    return handle_unimplemented(start, end);
   }
 }
 
