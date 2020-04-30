@@ -1,4 +1,6 @@
+#ifndef NOCATCH
 #include "catch.hpp"
+#endif
 
 #include <cstdint>
 #include <cstring>
@@ -10,7 +12,7 @@ extern "C" {
 }
 
 namespace msgpack {
-typedef enum {
+typedef enum : uint8_t {
 #define X(NAME, WIDTH, PAYLOAD) NAME,
 #include "msgpack.def"
 #undef X
@@ -32,6 +34,7 @@ const char *type_name(type ty) {
   exit(1);
 }
 
+extern "C"
 msgpack::type parse_type(unsigned char x) {
   using namespace msgpack;
   switch (x) {
@@ -115,12 +118,15 @@ msgpack::type parse_type(unsigned char x) {
   }
 }
 
-template <typename T, typename R> R bitcast(T x) {
+namespace {
+template <typename T, typename R>
+__attribute__((always_inline)) R bitcast(T x) {
   static_assert(sizeof(T) == sizeof(R), "");
   R tmp;
   memcpy(&tmp, &x, sizeof(T));
   return tmp;
 }
+} // namespace
 
 // Helper functions for reading additional payload from the header
 // Depending on the type, this can be a number of bytes, elements,
@@ -129,6 +135,8 @@ template <typename T, typename R> R bitcast(T x) {
 
 typedef uint64_t (*payload_info_t)(unsigned char *);
 
+namespace {
+namespace payload {
 // Some types don't contain embedded information, e.g. true
 // boolean may be available as a mask
 uint64_t read_zero(unsigned char *) { return 0; }
@@ -151,21 +159,44 @@ uint64_t read_size_field_u8(unsigned char *from) {
   from++;
   return from[0];
 }
+
+// TODO: detect whether host is little endian or not, and whether the intrinsic
+// is available. And probably use the builtin to test the diy
+const bool use_bswap = true;
+
 uint64_t read_size_field_u16(unsigned char *from) {
   from++;
-  return (from[0] << 8u) | from[1];
+  if (use_bswap) {
+    uint16_t b;
+    memcpy(&b, from, 2);
+    return __builtin_bswap16(b);
+  } else {
+    return (from[0] << 8u) | from[1];
+  }
 }
 uint64_t read_size_field_u32(unsigned char *from) {
   from++;
-  return (from[0] << 24u) | (from[1] << 16u) | (from[2] << 8u) |
-         (from[3] << 0u);
+  if (use_bswap) {
+    uint32_t b;
+    memcpy(&b, from, 4);
+    return __builtin_bswap32(b);
+  } else {
+    return (from[0] << 24u) | (from[1] << 16u) | (from[2] << 8u) |
+           (from[3] << 0u);
+  }
 }
 uint64_t read_size_field_u64(unsigned char *from) {
   from++;
-  return ((uint64_t)from[0] << 56u) | ((uint64_t)from[1] << 48u) |
-         ((uint64_t)from[2] << 40u) | ((uint64_t)from[3] << 32u) |
-         (from[4] << 24u) | (from[5] << 16u) | (from[6] << 8u) |
-         (from[7] << 0u);
+  if (use_bswap) {
+    uint64_t b;
+    memcpy(&b, from, 8);
+    return __builtin_bswap64(b);
+  } else {
+    return ((uint64_t)from[0] << 56u) | ((uint64_t)from[1] << 48u) |
+           ((uint64_t)from[2] << 40u) | ((uint64_t)from[3] << 32u) |
+           (from[4] << 24u) | (from[5] << 16u) | (from[6] << 8u) |
+           (from[7] << 0u);
+  }
 }
 
 uint64_t read_size_field_s8(unsigned char *from) {
@@ -188,13 +219,15 @@ uint64_t read_size_field_s64(unsigned char *from) {
   int64_t res = bitcast<uint64_t, int64_t>(u);
   return bitcast<int64_t, uint64_t>(res);
 }
+} // namespace payload
+} // namespace
 
 payload_info_t payload_info(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
 #define X(NAME, WIDTH, PAYLOAD)                                                \
   case NAME:                                                                   \
-    return PAYLOAD;
+    return payload::PAYLOAD;
 #include "msgpack.def"
 #undef X
   }
@@ -351,6 +384,7 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   }
 }
 
+#ifndef NOCATCH
 TEST_CASE("str") { CHECK(helloworld_msgpack_len != 0); }
 
 void json_print(unsigned char *start, unsigned char *end) {
@@ -597,3 +631,4 @@ TEST_CASE("hello world") {
     }
   }
 }
+#endif
