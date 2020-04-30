@@ -85,7 +85,9 @@ uint64_t read_embedded_s8(const unsigned char *start) {
 // Read a masked part of the first byte
 uint64_t read_via_mask_0x1(const unsigned char *start) { return *start & 0x1u; }
 uint64_t read_via_mask_0xf(const unsigned char *start) { return *start & 0xfu; }
-uint64_t read_via_mask_0x1f(const unsigned char *start) { return *start & 0x1fu; }
+uint64_t read_via_mask_0x1f(const unsigned char *start) {
+  return *start & 0x1fu;
+}
 
 // Read 1/2/4/8 bytes immediately following the type byte and zero/sign extend
 // Big endian format.
@@ -180,9 +182,8 @@ void nop_boolean(bool) {}
 void nop_array_elements(byte_range) {}
 void nop_map_elements(byte_range, byte_range) {}
 
-const unsigned char *
-array(uint64_t N, byte_range bytes,
-      std::function<void(byte_range)> callback) {
+const unsigned char *array(uint64_t N, byte_range bytes,
+                           std::function<void(byte_range)> callback) {
   for (uint64_t i = 0; i < N; i++) {
     const unsigned char *next = skip_next_message(bytes.start, bytes.end);
     if (!next) {
@@ -195,19 +196,18 @@ array(uint64_t N, byte_range bytes,
   return bytes.start;
 }
 
-const  unsigned char *map(uint64_t N, byte_range bytes,
-                     std::function<void(byte_range, byte_range)>
-                       callback) {
+const unsigned char *map(uint64_t N, byte_range bytes,
+                         std::function<void(byte_range, byte_range)> callback) {
 
   for (uint64_t i = 0; i < N; i++) {
-const    unsigned char *start_key = bytes.start;
-const    unsigned char *end_key = skip_next_message(start_key, bytes.end);
+    const unsigned char *start_key = bytes.start;
+    const unsigned char *end_key = skip_next_message(start_key, bytes.end);
 
     if (!end_key) {
       break;
     }
 
-const    unsigned char *start_value = end_key;
+    const unsigned char *start_value = end_key;
     const unsigned char *end_value = skip_next_message(start_value, bytes.end);
 
     if (!end_value) {
@@ -220,7 +220,7 @@ const    unsigned char *start_value = end_key;
   }
   return bytes.start;
 }
-  
+
 const unsigned char *nop_map(uint64_t N, byte_range bytes) {
   return map(N, bytes, nop_map_elements);
 }
@@ -232,14 +232,13 @@ const unsigned char *nop_array(uint64_t N, byte_range bytes) {
 } // namespace fallback
 
 const unsigned char *fallback::skip_next_message(const unsigned char *start,
-                                         const  unsigned char *end) {
+                                                 const unsigned char *end) {
   return handle_msgpack({start, end}, {});
 }
 
-const unsigned char *handle_msgpack(byte_range bytes,
-                              functors f) {
-const  unsigned char *start = bytes.start;
-const  unsigned char *end = bytes.end;
+const unsigned char *handle_msgpack(byte_range bytes, functors f) {
+  const unsigned char *start = bytes.start;
+  const unsigned char *end = bytes.end;
   const uint64_t available = end - start;
   if (available == 0) {
     return 0;
@@ -328,13 +327,12 @@ const  unsigned char *end = bytes.end;
   internal_error();
 }
 
-bool message_is_string(byte_range bytes,
-                       const char *str) {
+bool message_is_string(byte_range bytes, const char *str) {
   bool matched = false;
   functors f;
   size_t strN = strlen(str);
 
-  f.cb_string = [=, &matched](size_t N, const  unsigned char *str) {
+  f.cb_string = [=, &matched](size_t N, const unsigned char *str) {
     if (N == strN) {
       if (memcmp(str, str, N) == 0) {
         matched = true;
@@ -347,17 +345,88 @@ bool message_is_string(byte_range bytes,
 }
 
 void foreach_map(byte_range bytes,
-                 std::function<void(byte_range,byte_range)>
-                     callback) {
+                 std::function<void(byte_range, byte_range)> callback) {
   functors f;
   f.cb_map_elements = callback;
   handle_msgpack(bytes, f);
 }
 
-void foreach_array(
-                   byte_range bytes,
-    std::function<void(byte_range)> callback) {
+void foreach_array(byte_range bytes, std::function<void(byte_range)> callback) {
   functors f;
   f.cb_array_elements = callback;
   handle_msgpack(bytes, f);
+}
+
+void msgpack::dump(byte_range bytes) {
+  functors f;
+  unsigned indent = 0;
+  const unsigned by = 2;
+
+  f.cb_string = [&](size_t N, const unsigned char *bytes) {
+    char *tmp = (char *)malloc(N + 1);
+    memcpy(tmp, bytes, N);
+    tmp[N] = '\0';
+    printf("\"%s\"", tmp);
+    free(tmp);
+  };
+
+  f.cb_signed = [&](int64_t x) { printf("%ld", x); };
+  f.cb_unsigned = [&](uint64_t x) { printf("%lu", x); };
+
+  f.cb_array = [&](uint64_t N, byte_range bytes) -> const unsigned char * {
+    printf("\n%*s[\n", indent, "");
+    indent += by;
+
+    for (uint64_t i = 0; i < N; i++) {
+      indent += by;
+      printf("%*s", indent, "");
+      const unsigned char *next = handle_msgpack(bytes, f);
+      printf(",\n");
+      indent -= by;
+      bytes.start = next;
+      if (!next) {
+        break;
+      }
+    }
+    indent -= by;
+    printf("%*s]", indent, "");
+
+    return bytes.start;
+  };
+
+  f.cb_map = [&](uint64_t N, byte_range bytes) -> const unsigned char * {
+    printf("\n%*s{\n", indent, "");
+    indent += by;
+
+    for (uint64_t i = 0; i < 2 * N; i += 2) {
+      const unsigned char *start_key = bytes.start;
+      printf("%*s", indent, "");
+      const unsigned char *end_key = handle_msgpack({start_key, bytes.end}, f);
+      if (!end_key) {
+        break;
+      }
+
+      printf(" : ");
+
+      const unsigned char *start_value = end_key;
+      const unsigned char *end_value =
+          handle_msgpack({start_value, bytes.end}, f);
+
+      if (!end_value) {
+        break;
+      }
+
+      printf(",\n");
+
+      bytes.start = end_value;
+    }
+
+    indent -= by;
+    printf("%*s}", indent, "");
+
+    return bytes.start;
+  };
+
+  handle_msgpack(bytes, f);
+  printf("\n");
 }

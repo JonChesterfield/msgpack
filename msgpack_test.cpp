@@ -10,80 +10,6 @@ extern "C" {
 
 TEST_CASE("str") { CHECK(helloworld_msgpack_len != 0); }
 
-void json_print(byte_range bytes) {
-  functors f;
-  unsigned indent = 0;
-  const unsigned by = 2;
-
-  f.cb_string = [&](size_t N, const unsigned char *bytes) {
-    char *tmp = (char *)malloc(N + 1);
-    memcpy(tmp, bytes, N);
-    tmp[N] = '\0';
-    printf("\"%s\"", tmp);
-    free(tmp);
-  };
-
-  f.cb_signed = [&](int64_t x) { printf("%ld", x); };
-  f.cb_unsigned = [&](uint64_t x) { printf("%lu", x); };
-
-  f.cb_array = [&](uint64_t N, byte_range bytes) -> const unsigned char * {
-    printf("\n%*s[\n", indent, "");
-    indent += by;
-
-    for (uint64_t i = 0; i < N; i++) {
-      indent += by;
-      printf("%*s", indent, "");
-      const unsigned char *next = handle_msgpack(bytes, f);
-      printf(",\n");
-      indent -= by;
-      bytes.start = next;
-      if (!next) {
-        break;
-      }
-    }
-    indent -= by;
-    printf("%*s]", indent, "");
-
-    return bytes.start;
-  };
-
-  f.cb_map = [&](uint64_t N, byte_range bytes) -> const unsigned char * {
-    printf("\n%*s{\n", indent, "");
-    indent += by;
-
-    for (uint64_t i = 0; i < 2 * N; i += 2) {
-      const unsigned char *start_key = bytes.start;
-      printf("%*s", indent, "");
-      const unsigned char *end_key = handle_msgpack({start_key, bytes.end}, f);
-      if (!end_key) {
-        break;
-      }
-
-      printf(" : ");
-
-      const unsigned char *start_value = end_key;
-      const unsigned char *end_value =
-          handle_msgpack({start_value, bytes.end}, f);
-
-      if (!end_value) {
-        break;
-      }
-
-      printf(",\n");
-
-      bytes.start = end_value;
-    }
-
-    indent -= by;
-    printf("%*s}", indent, "");
-
-    return bytes.start;
-  };
-
-  handle_msgpack(bytes, f);
-  printf("\n");
-}
-
 void on_matching_string_key_apply_action_to_value(
     byte_range bytes,
     std::function<bool(size_t N, const unsigned char *bytes)> predicate,
@@ -113,7 +39,7 @@ void on_matching_string_key_apply_action_to_value(
 TEST_CASE("hello world") {
 
   SECTION("run it") {
-    json_print(
+    msgpack::dump(
         {helloworld_msgpack, helloworld_msgpack + helloworld_msgpack_len});
   }
 
