@@ -115,6 +115,17 @@ msgpack::type parse_type(unsigned char x) {
   }
 }
 
+
+uint64_t read_via_mask_0xf(unsigned char * start)
+{
+  return *start & 0xfu;
+}
+
+uint64_t read_via_mask_0x1f(unsigned char * start)
+{
+  return *start & 0x1fu;
+}
+
 template <typename T, typename R> R bitcast(T x) {
   static_assert(sizeof(T) == sizeof(R), "");
   R tmp;
@@ -166,21 +177,17 @@ uint64_t read_bigendian_s64(unsigned char *from) {
 // Only failure mode is going to be out of bounds
 // Return NULL on out of bounds, otherwise start of the next entry
 
-unsigned char fix_mask(msgpack::type ty) {
+
+unsigned bytes_used_fixed2(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
-  case fixstr:
-    return 0x1f;
-  case fixarray:
-    return 0xf;
-  case fixmap:
-    return 0xf;
-  default:
-    printf("Unimplemented fix_mask for %s\n", type_name(ty));
-    internal_error();
-  }
+#define X(NAME, WIDTH) case NAME: return WIDTH;
+#include "msgpack.def"
+#undef X
+  };
 }
-unsigned bytes_used_fixed(msgpack::type ty) {
+
+unsigned bytes_used_fixed1(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
 
@@ -253,6 +260,12 @@ unsigned bytes_used_fixed(msgpack::type ty) {
   }
 }
 
+  unsigned bytes_used_fixed(msgpack::type ty) {
+   unsigned r = bytes_used_fixed2(ty);
+   assert(r == bytes_used_fixed1(ty));
+   return r;
+ }
+  
 struct functors {
   functors();
 
@@ -318,7 +331,7 @@ handle_str(unsigned char *start, unsigned char *end,
   uint64_t N;
   switch (ty) {
   case msgpack::fixstr: {
-    N = *start & fix_mask(ty);
+    N = read_via_mask_0x1f(start);
     break;
   }
   case msgpack::str8: {
@@ -479,7 +492,7 @@ handle_array(unsigned char *start, unsigned char *end,
   uint64_t N;
   switch (ty) {
   case msgpack::fixarray: {
-    N = *start & fix_mask(ty);
+    N = read_via_mask_0xf(start);
     break;
   }
 
@@ -519,7 +532,7 @@ handle_map(unsigned char *start, unsigned char *end,
   uint64_t N;
   switch (ty) {
   case msgpack::fixmap: {
-    N = *start & fix_mask(ty);
+    N = read_via_mask_0xf(start);
     break;
   }
   case msgpack::map16: {
@@ -774,6 +787,14 @@ TEST_CASE("hello world") {
     CHECK(parse_type(start) == msgpack::fixmap);
   }
 
+  SECTION("used")
+    {
+      for (unsigned i = 0; i < 256; i++)
+        {
+          CHECK(bytes_used_fixed1(parse_type(i)) ==
+                bytes_used_fixed2(parse_type(i)));
+        }
+    }
   SECTION("run it") {
     // json_print(helloworld_msgpack, helloworld_msgpack +
     // helloworld_msgpack_len);
