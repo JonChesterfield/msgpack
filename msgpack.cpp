@@ -276,23 +276,27 @@ handle_str(unsigned char *start, unsigned char *end,
   }
   uint64_t available_post_header = available - bytes;
 
-  uint64_t N;
+  payload_info_t info = payload_info(ty);
+  uint64_t N = info(start);
   switch (ty) {
   case msgpack::fixstr: {
     N = read_via_mask_0x1f(start);
-    
+    assert(N == info(start));
     break;
   }
   case msgpack::str8: {
     N = read_size_field_u8(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::str16: {
     N = read_size_field_u16(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::str32: {
     N = read_size_field_u32(start);
+    assert(N == info(start));
     break;
   }
 
@@ -312,14 +316,17 @@ unsigned char *handle_boolean(unsigned char *start, unsigned char *end,
   uint64_t available = end - start;
   assert(available != 0);
   msgpack::type ty = parse_type(*start);
-  uint64_t N;
+  payload_info_t info = payload_info(ty);
+  uint64_t N = info(start);
   switch (ty) {
   case msgpack::t: {
     N = 1;
+    assert(N == info(start));
     break;
   }
   case msgpack::f: {
     N = 0;
+    assert(N == info(start));
     break;
   }
 
@@ -346,28 +353,34 @@ unsigned char *handle_uint(unsigned char *start, unsigned char *end,
     return 0;
   }
 
-  uint64_t N;
+  payload_info_t info = payload_info(ty);
+  uint64_t N = info(start);
   switch (ty) {
   case msgpack::posfixint: {
     // considered 'unsigned' by spec
     N = read_embedded_u8(start);
+    assert(N == info(start));
     break;
   }
 
   case msgpack::uint8: {
     N = read_size_field_u8(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::uint16: {
     N = read_size_field_u16(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::uint32: {
     N = read_size_field_u32(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::uint64: {
     N = read_size_field_u64(start);
+    assert(N == info(start));
     break;
   }
 
@@ -393,27 +406,33 @@ unsigned char *handle_sint(unsigned char *start, unsigned char *end,
     return 0;
   }
 
-  uint64_t N;
+  payload_info_t info = payload_info(ty);
+  uint64_t N = info(start);
   switch (ty) {
   case msgpack::negfixint: {
     // considered 'signed' by spec
     N = read_embedded_s8(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::int8: {
     N = read_size_field_s8(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::int16: {
     N = read_size_field_s16(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::int32: {
     N = read_size_field_s32(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::int64: {
     N = read_size_field_s64(start);
+    assert(N == info(start));
     break;
   }
   default:
@@ -440,20 +459,24 @@ handle_array(unsigned char *start, unsigned char *end,
     return 0;
   }
 
-  uint64_t N;
+  payload_info_t info = payload_info(ty);
+  uint64_t N = info(start);
   switch (ty) {
   case msgpack::fixarray: {
     N = read_via_mask_0xf(start);
+    assert(N == info(start));
     break;
   }
 
   case msgpack::array16: {
     N = read_size_field_u16(start);
+    assert(N == info(start));
     break;
   }
 
   case msgpack::array32: {
     N = read_size_field_u32(start);
+    assert(N == info(start));
     break;
   }
 
@@ -480,18 +503,22 @@ handle_map(unsigned char *start, unsigned char *end,
     return 0;
   }
 
-  uint64_t N;
+  payload_info_t info = payload_info(ty);
+  uint64_t N = info(start);
   switch (ty) {
   case msgpack::fixmap: {
     N = read_via_mask_0xf(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::map16: {
     N = read_size_field_u16(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::map32: {
     N = read_size_field_u32(start);
+    assert(N == info(start));
     break;
   }
   default:
@@ -511,7 +538,8 @@ unsigned char *handle_unimplemented(unsigned char *start, unsigned char *end) {
   }
   uint64_t available_post_header = available - bytes;
 
-  uint64_t N;
+  payload_info_t info = payload_info(ty);
+  uint64_t N = info(start);
   switch (ty) {
   case msgpack::nil:
   case msgpack::never_used:
@@ -523,21 +551,25 @@ unsigned char *handle_unimplemented(unsigned char *start, unsigned char *end) {
   case msgpack::fixext8:
   case msgpack::fixext16: {
     N = 0;
+    assert(N == info(start));
     break;
   }
   case msgpack::ext8:
   case msgpack::bin8: {
     N = read_size_field_u8(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::ext16:
   case msgpack::bin16: {
     N = read_size_field_u16(start);
+    assert(N == info(start));
     break;
   }
   case msgpack::ext32:
   case msgpack::bin32: {
     N = read_size_field_u32(start);
+    assert(N == info(start));
     break;
   }
   default:
