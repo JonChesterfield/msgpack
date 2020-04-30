@@ -11,121 +11,18 @@ extern "C" {
 
 namespace msgpack {
 typedef enum {
-  posfixint,
-  fixmap,
-  fixarray,
-  fixstr,
-  nil,
-  f,
-  t,
-  bin8,
-  bin16,
-  bin32,
-  ext8,
-  ext16,
-  ext32,
-  float32,
-  float64,
-  uint8,
-  uint16,
-  uint32,
-  uint64,
-  int8,
-  int16,
-  int32,
-  int64,
-  fixext1,
-  fixext2,
-  fixext4,
-  fixext8,
-  fixext16,
-  str8,
-  str16,
-  str32,
-  array16,
-  array32,
-  map16,
-  map32,
-  negfixint,
-  never_used,
+#define X(NAME, WIDTH) NAME,
+#include "msgpack.def"
+#undef X
 } type;
 
 const char *type_name(type ty) {
   switch (ty) {
-  case posfixint:
-    return "posfixint";
-  case fixmap:
-    return "fixmap";
-  case fixarray:
-    return "fixarray";
-  case fixstr:
-    return "fixstr";
-  case nil:
-    return "nil";
-  case f:
-    return "f";
-  case t:
-    return "t";
-  case bin8:
-    return "bin8";
-  case bin16:
-    return "bin16";
-  case bin32:
-    return "bin32";
-  case ext8:
-    return "ext8";
-  case ext16:
-    return "ext16";
-  case ext32:
-    return "ext32";
-  case float32:
-    return "float32";
-  case float64:
-    return "float64";
-  case uint8:
-    return "uint8";
-  case uint16:
-    return "uint16";
-  case uint32:
-    return "uint32";
-  case uint64:
-    return "uint64";
-  case int8:
-    return "int8";
-  case int16:
-    return "int16";
-  case int32:
-    return "int32";
-  case int64:
-    return "int64";
-  case fixext1:
-    return "fixext1";
-  case fixext2:
-    return "fixext2";
-  case fixext4:
-    return "fixext4";
-  case fixext8:
-    return "fixext8";
-  case fixext16:
-    return "fixext16";
-  case str8:
-    return "str8";
-  case str16:
-    return "str16";
-  case str32:
-    return "str32";
-  case array16:
-    return "array16";
-  case array32:
-    return "array32";
-  case map16:
-    return "map16";
-  case map32:
-    return "map32";
-  case negfixint:
-    return "negfixint";
-  case never_used:
-    return "never_used";
+#define X(NAME, WIDTH)                                                         \
+  case NAME:                                                                   \
+    return #NAME;
+#include "msgpack.def"
+#undef X
   }
 }
 } // namespace msgpack
@@ -889,15 +786,12 @@ TEST_CASE("hello world") {
       uint64_t segment_size = UINT64_MAX;
       std::string kernel_name = "";
 
-      
       functors f;
       f.cb_array = [&](uint64_t N, unsigned char *start,
-                            unsigned char *end) -> unsigned char * {
-
+                       unsigned char *end) -> unsigned char * {
         bool hit_name = false;
         bool hit_segment_size = false;
 
-        
         functors find_string_key;
         find_string_key.cb_string = [&](size_t N, unsigned char *bytes) {
           if (is_str(".name", N, bytes)) {
@@ -909,26 +803,24 @@ TEST_CASE("hello world") {
         };
 
         functors get_uint;
-        get_uint.cb_unsigned = [&](uint64_t x)
-        {
-          segment_size = x;
-        };
+        get_uint.cb_unsigned = [&](uint64_t x) { segment_size = x; };
 
         functors get_name;
         get_name.cb_string = [&](size_t N, unsigned char *bytes) {
-          kernel_name = std::string(bytes, bytes+N);
+          kernel_name = std::string(bytes, bytes + N);
         };
-        
+
         functors over_map;
         over_map.cb_map = [&](uint64_t N, unsigned char *start,
-                       unsigned char *end) -> unsigned char * {
+                              unsigned char *end) -> unsigned char * {
           for (uint64_t i = 0; i < N; i++) {
             unsigned char *start_key = start;
 
             hit_name = false;
             hit_segment_size = false;
 
-            unsigned char *end_key = handle_msgpack(start_key, end, find_string_key);
+            unsigned char *end_key =
+                handle_msgpack(start_key, end, find_string_key);
             if (!end_key) {
               return 0;
             }
@@ -966,8 +858,8 @@ TEST_CASE("hello world") {
 
       handle_msgpack(kernels_start, kernels_end, f);
 
-      printf("Kernel %s has segment size %lu\n", kernel_name.c_str(), segment_size);
-      
+      printf("Kernel %s has segment size %lu\n", kernel_name.c_str(),
+             segment_size);
     }
   }
 }
