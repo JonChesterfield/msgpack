@@ -6,6 +6,12 @@
 
 #include "msgpack.h"
 
+namespace {
+[[noreturn]] void internal_error() {
+  printf("internal error\n");
+  exit(1);
+}
+} // namespace
 
 namespace msgpack {
 
@@ -23,6 +29,7 @@ const char *type_name(type ty) {
 #include "msgpack.def"
 #undef X
   }
+  internal_error();
 }
 
 unsigned bytes_used_fixed(msgpack::type ty) {
@@ -33,12 +40,8 @@ unsigned bytes_used_fixed(msgpack::type ty) {
     return WIDTH;
 #include "msgpack.def"
 #undef X
-  };
-}
-
-[[noreturn]] void internal_error(void) {
-  printf("internal error\n");
-  exit(1);
+  }
+  internal_error();
 }
 
 msgpack::type parse_type(unsigned char x) {
@@ -49,7 +52,6 @@ msgpack::type parse_type(unsigned char x) {
   } else
 #include "msgpack.def"
 #undef X
-
   { internal_error(); }
 }
 
@@ -163,11 +165,11 @@ payload_info_t payload_info(msgpack::type ty) {
 #include "msgpack.def"
 #undef X
   }
+  internal_error();
 }
 
 // Only failure mode is going to be out of bounds
 // Return NULL on out of bounds, otherwise start of the next entry
-
 
 namespace fallback {
 
@@ -233,9 +235,6 @@ unsigned char *nop_array(uint64_t N, unsigned char *start, unsigned char *end) {
 }
 
 } // namespace fallback
-
-
-
 
 unsigned char *fallback::skip_next_message(unsigned char *start,
                                            unsigned char *end) {
@@ -329,6 +328,7 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
     return start + bytes + N;
   }
   }
+  internal_error();
 }
 
 void foreach_map(unsigned char *start, unsigned char *end,
