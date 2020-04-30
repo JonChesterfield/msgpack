@@ -13,14 +13,14 @@ extern "C" {
 
 namespace msgpack {
 typedef enum : uint8_t {
-#define X(NAME, WIDTH, PAYLOAD) NAME,
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER) NAME,
 #include "msgpack.def"
 #undef X
 } type;
 
 const char *type_name(type ty) {
   switch (ty) {
-#define X(NAME, WIDTH, PAYLOAD)                                                \
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                                \
   case NAME:                                                                   \
     return #NAME;
 #include "msgpack.def"
@@ -32,6 +32,18 @@ const char *type_name(type ty) {
 [[noreturn]] void internal_error(void) {
   printf("internal error\n");
   exit(1);
+}
+
+extern "C"
+msgpack::type parse_type2(unsigned char x) {
+  using namespace msgpack;
+
+  #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                                \
+    if (x >= LOWER && x <= UPPER) { return NAME; } else
+#include "msgpack.def"
+#undef X
+
+  {  internal_error();}
 }
 
 extern "C"
@@ -225,7 +237,7 @@ uint64_t read_size_field_s64(unsigned char *from) {
 payload_info_t payload_info(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
-#define X(NAME, WIDTH, PAYLOAD)                                                \
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                                \
   case NAME:                                                                   \
     return payload::PAYLOAD;
 #include "msgpack.def"
@@ -239,7 +251,7 @@ payload_info_t payload_info(msgpack::type ty) {
 unsigned bytes_used_fixed(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
-#define X(NAME, WIDTH, PAYLOAD)                                                \
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                                \
   case NAME:                                                                   \
     return WIDTH;
 #include "msgpack.def"
@@ -514,6 +526,19 @@ TEST_CASE("hello world") {
     json_print(helloworld_msgpack, helloworld_msgpack + helloworld_msgpack_len);
   }
 
+  SECTION("parse type")
+    {
+      for (unsigned i = 0; i < 256; i++)
+        {
+          CHECK(parse_type(i) == parse_type2(i));
+          if (parse_type(i) != parse_type2(i))
+            {
+              printf("i[%u]: %s != %s\n", i,
+                     type_name(parse_type(i)),
+                     type_name(parse_type2(i)));
+            }
+        }
+    }
   SECTION("build name : segment size map") {
     unsigned char *kernels_start = nullptr;
     unsigned char *kernels_end = nullptr;
