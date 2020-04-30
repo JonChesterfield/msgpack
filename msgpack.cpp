@@ -12,6 +12,7 @@ extern "C" {
 }
 
 namespace msgpack {
+
 typedef enum : uint8_t {
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER) NAME,
 #include "msgpack.def"
@@ -20,125 +21,51 @@ typedef enum : uint8_t {
 
 const char *type_name(type ty) {
   switch (ty) {
-#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                                \
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
   case NAME:                                                                   \
     return #NAME;
 #include "msgpack.def"
 #undef X
   }
 }
-} // namespace msgpack
+
+unsigned bytes_used_fixed(msgpack::type ty) {
+  using namespace msgpack;
+  switch (ty) {
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
+  case NAME:                                                                   \
+    return WIDTH;
+#include "msgpack.def"
+#undef X
+  };
+}
 
 [[noreturn]] void internal_error(void) {
   printf("internal error\n");
   exit(1);
 }
 
-extern "C"
-msgpack::type parse_type2(unsigned char x) {
-  using namespace msgpack;
+msgpack::type parse_type(unsigned char x) {
 
-  #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                                \
-    if (x >= LOWER && x <= UPPER) { return NAME; } else
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
+  if (x >= LOWER && x <= UPPER) {                                              \
+    return NAME;                                                               \
+  } else
 #include "msgpack.def"
 #undef X
 
-  {  internal_error();}
+  { internal_error(); }
 }
 
-extern "C"
-msgpack::type parse_type(unsigned char x) {
-  using namespace msgpack;
-  switch (x) {
-  case 0x00 ... 0x7f:
-    return posfixint;
-  case 0x80 ... 0x8f:
-    return fixmap;
-  case 0x90 ... 0x9f:
-    return fixarray;
-  case 0xa0 ... 0xbf:
-    return fixstr;
-  case 0xc0:
-    return nil;
-  case 0xc1:
-    return never_used;
-  case 0xc2:
-    return f;
-  case 0xc3:
-    return t;
-  case 0xc4:
-    return bin8;
-  case 0xc5:
-    return bin16;
-  case 0xc6:
-    return bin32;
-  case 0xc7:
-    return ext8;
-  case 0xc8:
-    return ext16;
-  case 0xc9:
-    return ext32;
-  case 0xca:
-    return float32;
-  case 0xcb:
-    return float64;
-  case 0xcc:
-    return uint8;
-  case 0xcd:
-    return uint16;
-  case 0xce:
-    return uint32;
-  case 0xcf:
-    return uint64;
-  case 0xd0:
-    return int8;
-  case 0xd1:
-    return int16;
-  case 0xd2:
-    return int32;
-  case 0xd3:
-    return int64;
-  case 0xd4:
-    return fixext1;
-  case 0xd5:
-    return fixext2;
-  case 0xd6:
-    return fixext4;
-  case 0xd7:
-    return fixext8;
-  case 0xd8:
-    return fixext16;
-  case 0xd9:
-    return str8;
-  case 0xda:
-    return str16;
-  case 0xdb:
-    return str32;
-  case 0xdc:
-    return array16;
-  case 0xdd:
-    return array32;
-  case 0xde:
-    return map16;
-  case 0xdf:
-    return map32;
-  case 0xe0 ... 0xff:
-    return negfixint;
+} // namespace msgpack
 
-  default:
-    internal_error();
-  }
-}
-
-namespace {
 template <typename T, typename R>
-__attribute__((always_inline)) R bitcast(T x) {
+R bitcast(T x) {
   static_assert(sizeof(T) == sizeof(R), "");
   R tmp;
   memcpy(&tmp, &x, sizeof(T));
   return tmp;
 }
-} // namespace
 
 // Helper functions for reading additional payload from the header
 // Depending on the type, this can be a number of bytes, elements,
@@ -174,7 +101,7 @@ uint64_t read_size_field_u8(unsigned char *from) {
 
 // TODO: detect whether host is little endian or not, and whether the intrinsic
 // is available. And probably use the builtin to test the diy
-const bool use_bswap = true;
+const bool use_bswap = false;
 
 uint64_t read_size_field_u16(unsigned char *from) {
   from++;
@@ -237,7 +164,7 @@ uint64_t read_size_field_s64(unsigned char *from) {
 payload_info_t payload_info(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
-#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                                \
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
   case NAME:                                                                   \
     return payload::PAYLOAD;
 #include "msgpack.def"
@@ -247,17 +174,6 @@ payload_info_t payload_info(msgpack::type ty) {
 
 // Only failure mode is going to be out of bounds
 // Return NULL on out of bounds, otherwise start of the next entry
-
-unsigned bytes_used_fixed(msgpack::type ty) {
-  using namespace msgpack;
-  switch (ty) {
-#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                                \
-  case NAME:                                                                   \
-    return WIDTH;
-#include "msgpack.def"
-#undef X
-  };
-}
 
 struct functors {
   functors();
@@ -313,7 +229,7 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
   if (available == 0) {
     return 0;
   }
-  const msgpack::type ty = parse_type(*start);
+  const msgpack::type ty = msgpack::parse_type(*start);
   const uint64_t bytes = bytes_used_fixed(ty);
   if (available < bytes) {
     return 0;
@@ -519,26 +435,13 @@ void on_matching_string_key_apply_action_to_value(
 TEST_CASE("hello world") {
   SECTION("sanity checks") {
     unsigned char start = helloworld_msgpack[0];
-    CHECK(parse_type(start) == msgpack::fixmap);
+    CHECK(msgpack::parse_type(start) == msgpack::fixmap);
   }
 
   SECTION("run it") {
     json_print(helloworld_msgpack, helloworld_msgpack + helloworld_msgpack_len);
   }
 
-  SECTION("parse type")
-    {
-      for (unsigned i = 0; i < 256; i++)
-        {
-          CHECK(parse_type(i) == parse_type2(i));
-          if (parse_type(i) != parse_type2(i))
-            {
-              printf("i[%u]: %s != %s\n", i,
-                     type_name(parse_type(i)),
-                     type_name(parse_type2(i)));
-            }
-        }
-    }
   SECTION("build name : segment size map") {
     unsigned char *kernels_start = nullptr;
     unsigned char *kernels_end = nullptr;
