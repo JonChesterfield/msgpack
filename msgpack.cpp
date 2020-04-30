@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <string>
 
 extern "C" {
 #include "helloworld_msgpack.h"
@@ -293,10 +294,10 @@ unsigned bytes_used_fixed(msgpack::type ty) {
   case fixmap:
   case fixstr:
     return 1;
-    
+
   case int8:
   case uint8:
-    return 2;   
+    return 2;
   case int16:
   case uint16:
     return 3;
@@ -720,6 +721,123 @@ unsigned char *handle_msgpack(unsigned char *start, unsigned char *end,
 
 TEST_CASE("str") { CHECK(helloworld_msgpack_len != 0); }
 
+void json_print(unsigned char *start, unsigned char *end) {
+  functors f;
+  unsigned indent = 0;
+  const unsigned by = 2;
+
+  f.cb_string = [&](size_t N, unsigned char *bytes) {
+    char *tmp = (char *)malloc(N + 1);
+    memcpy(tmp, bytes, N);
+    tmp[N] = '\0';
+    printf("\"%s\"", tmp);
+    free(tmp);
+  };
+
+  f.cb_signed = [&](int64_t x) { printf("%ld", x); };
+  f.cb_unsigned = [&](uint64_t x) { printf("%lu", x); };
+
+  f.cb_array = [&](uint64_t N, unsigned char *start,
+                   unsigned char *end) -> unsigned char * {
+    printf("%*s[\n", indent, "");
+    indent += by;
+
+    const char *sep = "";
+    for (uint64_t i = 0; i < N; i++) {
+      indent += by;
+      printf("%s", sep);
+      sep = ",";
+      unsigned char *next = handle_msgpack(start, end, f);
+      indent -= by;
+      start = next;
+      if (!next) {
+        break;
+      }
+    }
+    indent -= by;
+    printf("%*s]\n", indent, "");
+
+    return start;
+  };
+
+  f.cb_map = [&](uint64_t N, unsigned char *start,
+                 unsigned char *end) -> unsigned char * {
+    printf("%*s{\n", indent, "");
+    indent += by;
+
+    for (uint64_t i = 0; i < 2 * N; i += 2) {
+      unsigned char *start_key = start;
+      printf("%*s", indent, "");
+      unsigned char *end_key = handle_msgpack(start_key, end, f);
+      if (!end_key) {
+        break;
+      }
+
+      printf(" : ");
+
+      unsigned char *start_value = end_key;
+      unsigned char *end_value = handle_msgpack(start_value, end, f);
+
+      if (!end_value) {
+        break;
+      }
+
+      printf(",\n");
+
+      start = end_value;
+    }
+
+    indent -= by;
+    printf("%*s}\n", indent, "");
+
+    return start;
+  };
+
+  handle_msgpack(start, end, f);
+}
+
+void on_matching_string_key_apply_action_to_value(
+    unsigned char *start, unsigned char *end,
+    std::function<bool(size_t N, unsigned char *bytes)> predicate,
+    std::function<void(unsigned char *start, unsigned char *end)> action) {
+  bool matched;
+
+  functors f;
+
+  f.cb_string = [&predicate, &matched](size_t N, unsigned char *bytes) {
+    if (predicate(N, bytes)) {
+      matched = true;
+    }
+  };
+
+  f.cb_map = [&](uint64_t N, unsigned char *start,
+                 unsigned char *end) -> unsigned char * {
+    for (uint64_t i = 0; i < N; i++) {
+      matched = false;
+      unsigned char *start_key = start;
+      unsigned char *end_key = handle_msgpack(start_key, end, f);
+      if (!end_key) {
+        return 0;
+      }
+
+      if (matched) {
+        action(end_key, end);
+      }
+
+      // Skip over the value
+      unsigned char *start_value = end_key;
+      unsigned char *end_value = handle_msgpack(start_value, end, f);
+      if (!end_value) {
+        return 0;
+      }
+      start = end_value;
+    }
+    return start;
+  };
+
+  handle_msgpack(start, end, f);
+}
+
 TEST_CASE("hello world") {
   SECTION("sanity checks") {
     unsigned char start = helloworld_msgpack[0];
@@ -727,77 +845,129 @@ TEST_CASE("hello world") {
   }
 
   SECTION("run it") {
-    functors f;
-    unsigned indent = 0;
-    const unsigned by = 2;
+    // json_print(helloworld_msgpack, helloworld_msgpack +
+    // helloworld_msgpack_len);
+  }
 
-    f.cb_string = [&](size_t N, unsigned char *bytes) {
-      char *tmp = (char *)malloc(N + 1);
-      memcpy(tmp, bytes, N);
-      tmp[N] = '\0';
-      printf("\"%s\"", tmp);
-      free(tmp);
-    };
+  SECTION("build name : segment size map") {
+    unsigned char *kernels_start = nullptr;
+    unsigned char *kernels_end = nullptr;
 
-    f.cb_signed = [&](int64_t x) { printf("\"%ld\"", x); };
-    f.cb_unsigned = [&](uint64_t x) { printf("\"%lu\"", x); };
+    on_matching_string_key_apply_action_to_value(
+        helloworld_msgpack, helloworld_msgpack + helloworld_msgpack_len,
+        [](size_t N, unsigned char *bytes) {
+          const char *ref = "amdhsa.kernels";
+          size_t nref = strlen(ref);
+          if (N == nref) {
+            if (memcmp(bytes, ref, N) == 0) {
+              return true;
+            }
+          }
+          return false;
+        },
+        [&](unsigned char *start, unsigned char *end) {
+          if (kernels_start == nullptr) {
+            kernels_start = start;
+            kernels_end = end;
+          } else {
+            printf("unhandled\n");
+          }
+        });
 
-    f.cb_array = [&](uint64_t N, unsigned char *start,
-                     unsigned char *end) -> unsigned char * {
-      printf("%*s[\n", indent, "");
-      indent += by;
+    if (kernels_start) {
 
-      const char *sep = "";
-      for (uint64_t i = 0; i < N; i++) {
-        indent += by;
-        printf("%s", sep);
-        sep = ",";
-        unsigned char *next = handle_msgpack(start, end, f);
-        indent -= by;
-        start = next;
-        if (!next) {
-          break;
+      auto is_str = [](const char *key, uint64_t N,
+                       unsigned char *bytes) -> bool {
+        if (strlen(key) == N) {
+          if (memcmp(bytes, key, N) == 0) {
+            return true;
+          }
         }
-      }
-      indent -= by;
-      printf("%*s]\n", indent, "");
+        return false;
+      };
 
-      return start;
-    };
+      uint64_t segment_size = UINT64_MAX;
+      std::string kernel_name = "";
 
-    f.cb_map = [&](uint64_t N, unsigned char *start,
-                   unsigned char *end) -> unsigned char * {
-      printf("%*s{\n", indent, "");
-      indent += by;
+      
+      functors f;
+      f.cb_array = [&](uint64_t N, unsigned char *start,
+                            unsigned char *end) -> unsigned char * {
 
-      for (uint64_t i = 0; i < 2 * N; i += 2) {
-        unsigned char *start_key = start;
-        printf("%*s", indent, "");
-        unsigned char *end_key = handle_msgpack(start_key, end, f);
-        if (!end_key) {
-          break;
+        bool hit_name = false;
+        bool hit_segment_size = false;
+
+        
+        functors find_string_key;
+        find_string_key.cb_string = [&](size_t N, unsigned char *bytes) {
+          if (is_str(".name", N, bytes)) {
+            hit_name = true;
+          }
+          if (is_str(".kernarg_segment_size", N, bytes)) {
+            hit_segment_size = true;
+          }
+        };
+
+        functors get_uint;
+        get_uint.cb_unsigned = [&](uint64_t x)
+        {
+          segment_size = x;
+        };
+
+        functors get_name;
+        get_name.cb_string = [&](size_t N, unsigned char *bytes) {
+          kernel_name = std::string(bytes, bytes+N);
+        };
+        
+        functors over_map;
+        over_map.cb_map = [&](uint64_t N, unsigned char *start,
+                       unsigned char *end) -> unsigned char * {
+          for (uint64_t i = 0; i < N; i++) {
+            unsigned char *start_key = start;
+
+            hit_name = false;
+            hit_segment_size = false;
+
+            unsigned char *end_key = handle_msgpack(start_key, end, find_string_key);
+            if (!end_key) {
+              return 0;
+            }
+
+            unsigned char *start_value = end_key;
+
+            if (hit_name) {
+              handle_msgpack(start_value, end, get_name);
+            }
+
+            if (hit_segment_size) {
+              handle_msgpack(start_value, end, get_uint);
+            }
+
+            // Skip over the value
+            unsigned char *end_value = handle_msgpack(start_value, end, {});
+            if (!end_value) {
+              return 0;
+            }
+            start = end_value;
+          }
+
+          return start;
+        };
+
+        for (uint64_t i = 0; i < N; i++) {
+          unsigned char *next = handle_msgpack(start, end, over_map);
+          if (!next) {
+            return 0;
+          }
+          start = next;
         }
+        return start;
+      };
 
-        printf(" : ");
+      handle_msgpack(kernels_start, kernels_end, f);
 
-        unsigned char *start_value = end_key;
-        unsigned char *end_value = handle_msgpack(start_value, end, f);
-
-        if (!end_value) {
-          break;
-        }
-
-        printf(",\n");
-
-        start = end_value;
-      }
-
-      indent -= by;
-      printf("%*s}\n", indent, "");
-
-      return start;
-    };
-    handle_msgpack(helloworld_msgpack,
-                   helloworld_msgpack + helloworld_msgpack_len, f);
+      printf("Kernel %s has segment size %lu\n", kernel_name.c_str(), segment_size);
+      
+    }
   }
 }
