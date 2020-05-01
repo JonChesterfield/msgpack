@@ -1,4 +1,4 @@
-// name, header width, probably function to read N from that header
+// name, header width, reader, [lower, upper] encoding
 X(posfixint, 1, read_embedded_u8, 0x00, 0x7f)
 X(negfixint, 1, read_embedded_s8, 0xe0, 0xff)
 X(fixmap, 1, read_via_mask_0xf, 0x80, 0x8f)
