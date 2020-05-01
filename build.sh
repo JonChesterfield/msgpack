@@ -7,6 +7,7 @@ CXX="clang++ -std=c++11 -Wall"
 
 $CXX -O1 msgpack.cpp -c -o msgpack.o
 $CXX -O1 msgpack_test.cpp -c -o msgpack_test.o
+$CXX -O1 msgpack_fuzz.cpp -c -o msgpack_fuzz.o
 
 $CC helloworld_msgpack.c -c -o helloworld_msgpack.o
 $CC manykernels_msgpack.c -c -o manykernels_msgpack.o
@@ -15,8 +16,8 @@ $CXX -DNDEBUG -O3 msgpack.cpp -emit-llvm -S -c -o msgpack.ll
 llc msgpack.ll -o msgpack.s
 
 
-$CXX msgpack.o msgpack_test.o catch.o helloworld_msgpack.o manykernels_msgpack.o -o msgpack.exe
+$CXX msgpack.o msgpack_test.o msgpack_fuzz.o catch.o helloworld_msgpack.o manykernels_msgpack.o -o msgpack.exe
 
-./msgpack.exe
+valgrind ./msgpack.exe
 
 rm -f msgpack.o

@@ -107,20 +107,21 @@ TEST_CASE("hello world") {
         };
 
         functors over_map;
-        over_map.cb_map = [&](uint64_t N,byte_range bytes) -> const unsigned char * {
+        over_map.cb_map = [&](uint64_t N,
+                              byte_range bytes) -> const unsigned char * {
           for (uint64_t i = 0; i < N; i++) {
-const            unsigned char *start_key = bytes.start;
+            const unsigned char *start_key = bytes.start;
 
             hit_name = false;
             hit_segment_size = false;
 
-     const       unsigned char *end_key =
-handle_msgpack({start_key, bytes.end}, find_string_key);
+            const unsigned char *end_key =
+                handle_msgpack({start_key, bytes.end}, find_string_key);
             if (!end_key) {
               return 0;
             }
 
-const            unsigned char *start_value = end_key;
+            const unsigned char *start_value = end_key;
 
             if (hit_name) {
               handle_msgpack({start_value, bytes.end}, get_name);
@@ -131,7 +132,8 @@ const            unsigned char *start_value = end_key;
             }
 
             // Skip over the value
-const            unsigned char *end_value = handle_msgpack({start_value, bytes.end}, {});
+            const unsigned char *end_value =
+                handle_msgpack({start_value, bytes.end}, {});
             if (!end_value) {
               return 0;
             }
@@ -142,11 +144,11 @@ const            unsigned char *end_value = handle_msgpack({start_value, bytes.e
         };
 
         for (uint64_t i = 0; i < N; i++) {
-const          unsigned char *next = handle_msgpack(bytes, over_map);
+          const unsigned char *next = handle_msgpack(bytes, over_map);
           if (!next) {
             return 0;
           }
-bytes.          start = next;
+          bytes.start = next;
         }
         return bytes.start;
       };
@@ -158,54 +160,49 @@ bytes.          start = next;
     }
   }
 
-  SECTION("run it big") {
+  SECTION("run it bigger") {
     unsigned char *start = manykernels_msgpack;
     unsigned char *end = manykernels_msgpack + manykernels_msgpack_len;
 
-    foreach_map({start, end},
-                [&](byte_range key, byte_range value) {
-                  bool matched =
-                      message_is_string(key, "amdhsa.kernels");
+    foreach_map({start, end}, [&](byte_range key, byte_range value) {
+      bool matched = message_is_string(key, "amdhsa.kernels");
 
-                  if (!matched) {
-                    return;
-                  }
+      if (!matched) {
+        return;
+      }
 
-                  foreach_array(
-                      value,
-                      [&](byte_range bytes) {
-                        uint64_t kernarg_count = 0;
-                        uint64_t kernarg_res;
-                        uint64_t kernname_count = 0;
-                        std::string kernname_res;
+      foreach_array(value, [&](byte_range bytes) {
+        uint64_t kernarg_count = 0;
+        uint64_t kernarg_res;
+        uint64_t kernname_count = 0;
+        std::string kernname_res;
 
-                        auto inner = [&](byte_range key, byte_range value) {
-                          if (message_is_string(key, 
-                                                ".kernarg_segment_size")) {
-                            functors f;
-                            f.cb_unsigned = [&](uint64_t x) {
-                              kernarg_count++;
-                              kernarg_res = x;
-                            };
-                            handle_msgpack(value, f);
-                          }
+        auto inner = [&](byte_range key, byte_range value) {
+          if (message_is_string(key, ".kernarg_segment_size")) {
+            functors f;
+            f.cb_unsigned = [&](uint64_t x) {
+              kernarg_count++;
+              kernarg_res = x;
+            };
+            handle_msgpack(value, f);
+          }
 
-                          if (message_is_string(key, ".name")) {
-                            functors f;
-                            f.cb_string = [&](size_t N, const unsigned char *str) {
-                              kernname_count++;
-                              kernname_res = std::string(str, str + N);
-                            };
-                            handle_msgpack(value, f);
-                          }
-                        };
+          if (message_is_string(key, ".name")) {
+            functors f;
+            f.cb_string = [&](size_t N, const unsigned char *str) {
+              kernname_count++;
+              kernname_res = std::string(str, str + N);
+            };
+            handle_msgpack(value, f);
+          }
+        };
 
-                        foreach_map(bytes, inner);
+        foreach_map(bytes, inner);
 
-                        if (kernarg_count == 1 && kernname_count == 1) {
-                          printf("winning\n");
-                        }
-                      });
-                });
+        if (kernarg_count == 1 && kernname_count == 1) {
+          // printf("winning\n");
+        }
+      });
+    });
   }
 }

@@ -1,2 +1,2 @@
 # msgpack
-A message pack reader
+A message pack reader. Dev / test branch.
