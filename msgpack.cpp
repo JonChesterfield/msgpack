@@ -327,14 +327,14 @@ const unsigned char *handle_msgpack(byte_range bytes, functors f) {
   internal_error();
 }
 
-bool message_is_string(byte_range bytes, const char *str) {
+bool message_is_string(byte_range bytes, const char *needle) {
   bool matched = false;
   functors f;
-  size_t strN = strlen(str);
+  size_t needleN = strlen(needle);
 
   f.cb_string = [=, &matched](size_t N, const unsigned char *str) {
-    if (N == strN) {
-      if (memcmp(str, str, N) == 0) {
+    if (N == needleN) {
+      if (memcmp(needle, str, N) == 0) {
         matched = true;
       }
     }
