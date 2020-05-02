@@ -44,7 +44,7 @@ unsigned bytes_used_fixed(msgpack::type ty) {
   internal_error();
 }
 
-msgpack::type parse_type(unsigned char x) {
+static msgpack::type parse_type1(unsigned char x) {
 
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
   if (x >= LOWER && x <= UPPER) {                                              \
@@ -53,6 +53,68 @@ msgpack::type parse_type(unsigned char x) {
 #include "msgpack.def"
 #undef X
   { internal_error(); }
+}
+
+static msgpack::type parse_type2(unsigned char x) {
+  static const msgpack::type tab[256] = {
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  posfixint, posfixint, posfixint, posfixint,
+      posfixint, posfixint,  fixmap,    fixmap,    fixmap,    fixmap,
+      fixmap,    fixmap,     fixmap,    fixmap,    fixmap,    fixmap,
+      fixmap,    fixmap,     fixmap,    fixmap,    fixmap,    fixmap,
+      fixarray,  fixarray,   fixarray,  fixarray,  fixarray,  fixarray,
+      fixarray,  fixarray,   fixarray,  fixarray,  fixarray,  fixarray,
+      fixarray,  fixarray,   fixarray,  fixarray,  fixstr,    fixstr,
+      fixstr,    fixstr,     fixstr,    fixstr,    fixstr,    fixstr,
+      fixstr,    fixstr,     fixstr,    fixstr,    fixstr,    fixstr,
+      fixstr,    fixstr,     fixstr,    fixstr,    fixstr,    fixstr,
+      fixstr,    fixstr,     fixstr,    fixstr,    fixstr,    fixstr,
+      fixstr,    fixstr,     fixstr,    fixstr,    fixstr,    fixstr,
+      nil,       never_used, f,         t,         bin8,      bin16,
+      bin32,     ext8,       ext16,     ext32,     float32,   float64,
+      uint8,     uint16,     uint32,    uint64,    int8,      int16,
+      int32,     int64,      fixext1,   fixext2,   fixext4,   fixext8,
+      fixext16,  str8,       str16,     str32,     array16,   array32,
+      map16,     map32,      negfixint, negfixint, negfixint, negfixint,
+      negfixint, negfixint,  negfixint, negfixint, negfixint, negfixint,
+      negfixint, negfixint,  negfixint, negfixint, negfixint, negfixint,
+      negfixint, negfixint,  negfixint, negfixint, negfixint, negfixint,
+      negfixint, negfixint,  negfixint, negfixint, negfixint, negfixint,
+      negfixint, negfixint,  negfixint, negfixint,
+  };
+  return tab[x];
+}
+
+msgpack::type parse_type(unsigned char x) {
+  const bool tab = false;
+  return tab ? parse_type2(x) : parse_type1(x);
+}
+
+extern "C" void gen_parse_type_tab(void) {
+  printf("msgpack::type tab[256] = {\n");
+  for (unsigned i = 0; i < 256; i++) {
+    printf("  /*[%3u]*/ %s,\n", i, type_name(parse_type1((unsigned char)i)));
+  }
+  printf("}\n");
 }
 
 } // namespace msgpack

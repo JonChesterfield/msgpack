@@ -23,7 +23,12 @@ $CXX msgpack.bc msgpack_test.o msgpack_fuzz.o catch.o helloworld_msgpack.o manyk
 $CXX -DNDEBUG -O3 msgpack.cpp -emit-llvm -S -c -o msgpack.ll
 $LLC msgpack.ll -o msgpack.s
 
-$LINK msgpack.bc msgpack_codegen.bc | $OPT -O3 | llvm-extract -func nop_handle_msgpack -func nop_handle_msgpack_templated -func _Z14handle_msgpackI12functors_nopEPKh10byte_rangeT_ -S -o codegen.ll
-$LLC codegen.ll -o codegen.s
+$LINK msgpack.bc msgpack_codegen.bc | $OPT -O3 -o merged.bc
+llvm-extract merged.bc -func nop_handle_msgpack -S -o baseline.ll
+llvm-extract merged.bc -func nop_handle_msgpack_templated -func _Z14handle_msgpackI12functors_nopEPKh10byte_rangeT_ -S -o template.ll
+rm -f merged.bc
+
+$LLC baseline.ll -o baseline.s
+$LLC template.ll -o template.s
 
 time  ./msgpack.exe

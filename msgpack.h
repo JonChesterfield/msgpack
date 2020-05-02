@@ -143,7 +143,7 @@ private:
       const unsigned char *next =
           fallback::skip_next_message_templated(bytes.start, bytes.end);
       if (!next) {
-        return 0;
+        return nullptr;
       }
 
       derived().handle_array_elements(bytes);
@@ -163,7 +163,7 @@ private:
           fallback::skip_next_message_templated(start_key, bytes.end);
 
       if (!end_key) {
-        break;
+        return nullptr;
       }
 
       const unsigned char *start_value = end_key;
@@ -171,7 +171,7 @@ private:
           fallback::skip_next_message_templated(start_value, bytes.end);
 
       if (!end_value) {
-        break;
+        return nullptr;
       }
       derived().handle_map_elements({start_key, end_key},
                                     {start_value, end_value});

@@ -7,8 +7,6 @@ extern "C" const unsigned char *nop_handle_msgpack(const unsigned char *start,
   return handle_msgpack({start, end}, f);
 }
 
-
-__attribute__((flatten))
 extern "C" const unsigned char *nop_handle_msgpack_templated(const unsigned char *start,
                                                    const unsigned char *end) { 
   return handle_msgpack({start, end}, functors_nop());
