@@ -133,7 +133,7 @@ TEST_CASE("hello world") {
 
             // Skip over the value
             const unsigned char *end_value =
-                handle_msgpack({start_value, bytes.end}, {});
+            handle_msgpack({start_value, bytes.end}, functors());
             if (!end_value) {
               return 0;
             }

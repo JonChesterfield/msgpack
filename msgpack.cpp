@@ -233,10 +233,17 @@ const unsigned char *nop_array(uint64_t N, byte_range bytes) {
 
 const unsigned char *fallback::skip_next_message(const unsigned char *start,
                                                  const unsigned char *end) {
-  return handle_msgpack({start, end}, {});
+  return handle_msgpack({start, end}, functors());
 }
 
-const unsigned char *handle_msgpack(byte_range bytes, functors f) {
+const unsigned char *
+fallback::skip_next_message_templated(const unsigned char *start,
+                                      const unsigned char *end) {
+  return handle_msgpack({start, end}, functors_nop());
+}
+
+template <typename F>
+const unsigned char *handle_msgpack(byte_range bytes, F f) {
   const unsigned char *start = bytes.start;
   const unsigned char *end = bytes.end;
   const uint64_t available = end - start;
@@ -250,6 +257,8 @@ const unsigned char *handle_msgpack(byte_range bytes, functors f) {
   }
   const uint64_t available_post_header = available - bytes_used;
 
+  // If this is called with a compile time constant ty, can inline the
+  // associated function Means duplication in the following switch
   const payload_info_t info = payload_info(ty);
   const uint64_t N = info(start);
 
@@ -343,6 +352,9 @@ bool message_is_string(byte_range bytes, const char *needle) {
   handle_msgpack(bytes, f);
   return matched;
 }
+
+template const unsigned char *handle_msgpack(byte_range, functors);
+template const unsigned char *handle_msgpack(byte_range, functors_nop);
 
 void foreach_map(byte_range bytes,
                  std::function<void(byte_range, byte_range)> callback) {
