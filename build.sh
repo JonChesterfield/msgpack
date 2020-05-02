@@ -26,6 +26,12 @@ $LLC msgpack.ll -o msgpack.s
 $LINK msgpack.bc msgpack_codegen.bc | $OPT -O3 -o merged.bc
 llvm-extract merged.bc -func nop_handle_msgpack -S -o baseline.ll
 llvm-extract merged.bc -func nop_handle_msgpack_templated -func _Z14handle_msgpackI12functors_nopEPKh10byte_rangeT_ -S -o template.ll
+
+
+llvm-extract merged.bc -func nop_handle_msgpack_nonested -func _Z14handle_msgpackI22functors_ignore_nestedEPKh10byte_rangeT_ -S -o nonested.ll
+
+llvm-extract merged.bc -func apply_if_top_level_is_unsigned -func _Z14handle_msgpackI35only_apply_if_top_level_is_unsignedEPKh10byte_rangeT_ -S -o unsigned.ll
+
 rm -f merged.bc
 
 $LLC baseline.ll -o baseline.s

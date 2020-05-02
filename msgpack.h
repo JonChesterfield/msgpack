@@ -86,6 +86,11 @@ public:
     return derived().handle_map(N, bytes);
   }
 
+  // Influence over implementation efficiency
+  bool cb_ignore_nested_structures() {
+    return derived().handle_ignore_nested_structures();
+  }
+
 private:
   Derived &derived() { return *static_cast<Derived *>(this); }
 
@@ -139,6 +144,11 @@ private:
       printf("Default array, N = %lu\n", N);
     }
 
+    if (derived().cb_ignore_nested_structures())
+      {
+        return bytes.end;
+      }
+    
     for (uint64_t i = 0; i < N; i++) {
       const unsigned char *next =
           fallback::skip_next_message_templated(bytes.start, bytes.end);
@@ -146,7 +156,7 @@ private:
         return nullptr;
       }
 
-      derived().handle_array_elements(bytes);
+      cb_array_elements(bytes);
 
       bytes.start = next;
     }
@@ -157,6 +167,11 @@ private:
     if (verbose) {
       printf("Default map, N = %lu\n", N);
     }
+    if (derived().cb_ignore_nested_structures())
+      {
+        return bytes.end;
+      }
+
     for (uint64_t i = 0; i < N; i++) {
       const unsigned char *start_key = bytes.start;
       const unsigned char *end_key =
@@ -173,16 +188,51 @@ private:
       if (!end_value) {
         return nullptr;
       }
-      derived().handle_map_elements({start_key, end_key},
-                                    {start_value, end_value});
+      cb_map_elements({start_key, end_key},
+                      {start_value, end_value});
 
       bytes.start = end_value;
     }
     return bytes.start;
   }
+
+  // correct by default
+  bool handle_ignore_nested_structures() {
+    return false;
+  }
+
 };
 
 struct functors_nop : public functors_defaults<functors_nop> {};
+
+struct functors_ignore_nested
+    : public functors_defaults<functors_ignore_nested> {
+  const unsigned char *handle_array(uint64_t N, byte_range bytes) {
+    return bytes.end;
+  }
+  const unsigned char *handle_map(uint64_t N, byte_range bytes) {
+    return bytes.end;
+  }
+  bool handle_ignore_nested_structures() {
+    return true;
+  }
+
+};
+
+struct only_apply_if_top_level_is_unsigned
+    : public functors_defaults<only_apply_if_top_level_is_unsigned> {
+  only_apply_if_top_level_is_unsigned(std::function<void(uint64_t)> f) : f(f) {}
+
+  void handle_unsigned(uint64_t x) { f(x); }
+
+  bool handle_ignore_nested_structures() {
+    return true;
+  }
+
+
+private:
+  std::function<void(uint64_t)> f;
+};
 
 template <typename F> const unsigned char *handle_msgpack(byte_range, F f);
 

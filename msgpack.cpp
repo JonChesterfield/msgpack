@@ -160,7 +160,7 @@ uint64_t read_size_field_u8(const unsigned char *from) {
 
 // TODO: detect whether host is little endian or not, and whether the intrinsic
 // is available. And probably use the builtin to test the diy
-const bool use_bswap = false;
+const bool use_bswap = true;
 
 uint64_t read_size_field_u16(const unsigned char *from) {
   from++;
@@ -315,6 +315,8 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
 
   // const msgpack::type ty = msgpack::parse_type(*start);
 
+  // Would be better to skip the bytes used calculation when the result value is not
+  // used and the type has no handler registered
   const uint64_t bytes_used = bytes_used_fixed(ty);
   if (available < bytes_used) {
     return 0;
@@ -410,14 +412,17 @@ const unsigned char *handle_msgpack(byte_range bytes, F f) {
     return 0;
   }
   const msgpack::type ty = msgpack::parse_type(*start);
+  const bool asm_markers = true;
 
   switch (ty) {
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
   case msgpack::NAME: {                                                        \
-    asm("# Handle msgpack::" #NAME " begin");                                  \
+    if (asm_markers)                                                           \
+      asm("# Handle msgpack::" #NAME " begin");                                \
     const unsigned char *res =                                                 \
         handle_msgpack_given_type<msgpack::NAME, F>(bytes, f);                 \
-    asm("# Handle msgpack::" #NAME " finish");                                 \
+    if (asm_markers)                                                           \
+      asm("# Handle msgpack::" #NAME " finish");                               \
     return res;                                                                \
   }
 
@@ -447,7 +452,10 @@ bool message_is_string(byte_range bytes, const char *needle) {
 
 template const unsigned char *handle_msgpack(byte_range, functors);
 template const unsigned char *handle_msgpack(byte_range, functors_nop);
-
+template const unsigned char *
+    handle_msgpack(byte_range, only_apply_if_top_level_is_unsigned);
+template const unsigned char *handle_msgpack(byte_range,
+                                             functors_ignore_nested);
 void foreach_map(byte_range bytes,
                  std::function<void(byte_range, byte_range)> callback) {
   functors f;
