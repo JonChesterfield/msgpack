@@ -91,6 +91,18 @@ public:
     return derived().handle_ignore_nested_structures();
   }
 
+  __attribute__((used)) bool handle_map_is_default() {
+    asm("# handle_map_is_default");
+    return &functors_defaults::handle_map == &Derived::handle_map;
+  }
+
+  __attribute__((used)) bool handle_unsigned_is_default() {
+    asm("# handle_unsigned_is_default");
+    return &functors_defaults::handle_unsigned == &Derived::handle_unsigned;
+  }
+
+  constexpr static bool handle_string_is_default();
+
 private:
   Derived &derived() { return *static_cast<Derived *>(this); }
 
@@ -144,11 +156,10 @@ private:
       printf("Default array, N = %lu\n", N);
     }
 
-    if (derived().cb_ignore_nested_structures())
-      {
-        return bytes.end;
-      }
-    
+    if (derived().cb_ignore_nested_structures()) {
+      return bytes.end;
+    }
+
     for (uint64_t i = 0; i < N; i++) {
       const unsigned char *next =
           fallback::skip_next_message_templated(bytes.start, bytes.end);
@@ -167,10 +178,9 @@ private:
     if (verbose) {
       printf("Default map, N = %lu\n", N);
     }
-    if (derived().cb_ignore_nested_structures())
-      {
-        return bytes.end;
-      }
+    if (derived().cb_ignore_nested_structures()) {
+      return bytes.end;
+    }
 
     for (uint64_t i = 0; i < N; i++) {
       const unsigned char *start_key = bytes.start;
@@ -188,8 +198,7 @@ private:
       if (!end_value) {
         return nullptr;
       }
-      cb_map_elements({start_key, end_key},
-                      {start_value, end_value});
+      cb_map_elements({start_key, end_key}, {start_value, end_value});
 
       bytes.start = end_value;
     }
@@ -197,10 +206,13 @@ private:
   }
 
   // correct by default
-  bool handle_ignore_nested_structures() {
-    return false;
-  }
+  bool handle_ignore_nested_structures() { return false; }
+};
 
+// In line rejected with template not instantiated yet
+template <typename Derived>
+constexpr bool functors_defaults<Derived>::handle_string_is_default() {
+  return &functors_defaults::handle_string == &Derived::handle_string;
 };
 
 struct functors_nop : public functors_defaults<functors_nop> {};
@@ -213,10 +225,7 @@ struct functors_ignore_nested
   const unsigned char *handle_map(uint64_t N, byte_range bytes) {
     return bytes.end;
   }
-  bool handle_ignore_nested_structures() {
-    return true;
-  }
-
+  bool handle_ignore_nested_structures() { return true; }
 };
 
 struct only_apply_if_top_level_is_unsigned
@@ -225,13 +234,28 @@ struct only_apply_if_top_level_is_unsigned
 
   void handle_unsigned(uint64_t x) { f(x); }
 
-  bool handle_ignore_nested_structures() {
-    return true;
-  }
-
+  bool handle_ignore_nested_structures() { return true; }
 
 private:
   std::function<void(uint64_t)> f;
+};
+
+struct example : public functors_defaults<example> {
+  example() { static_assert(handle_string_is_default() == false, ""); }
+
+  // Possible bug here. Adding this == true before the call
+  // makes both the others fail
+  // static_assert(handle_string_is_default() == true, "");
+  void handle_string(size_t N, const unsigned char *str) {
+    printf("Called derived handle string\n");
+  }
+  static_assert(handle_string_is_default() == false, "");
+
+  // Here it just fails, as it should
+  //   static_assert(handle_string_is_default() == true, "");
+  void handle_array_elements(byte_range bytes) {
+    printf("called derived array elements\n");
+  }
 };
 
 template <typename F> const unsigned char *handle_msgpack(byte_range, F f);

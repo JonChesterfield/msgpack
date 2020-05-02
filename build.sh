@@ -32,7 +32,7 @@ llvm-extract merged.bc -func nop_handle_msgpack_nonested -func _Z14handle_msgpac
 
 llvm-extract merged.bc -func apply_if_top_level_is_unsigned -func _Z14handle_msgpackI35only_apply_if_top_level_is_unsignedEPKh10byte_rangeT_ -S -o unsigned.ll
 
-rm -f merged.bc
+llvm-dis merged.bc
 
 $LLC baseline.ll -o baseline.s
 $LLC template.ll -o template.s

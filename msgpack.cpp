@@ -456,6 +456,9 @@ template const unsigned char *
     handle_msgpack(byte_range, only_apply_if_top_level_is_unsigned);
 template const unsigned char *handle_msgpack(byte_range,
                                              functors_ignore_nested);
+
+template const unsigned char *handle_msgpack(byte_range, example);
+
 void foreach_map(byte_range bytes,
                  std::function<void(byte_range, byte_range)> callback) {
   functors f;
