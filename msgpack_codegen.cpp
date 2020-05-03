@@ -42,12 +42,12 @@ TEST_CASE(" ex ") {
     const unsigned char *data = (const unsigned char *)"foobar\n";
     expt(data, data + 10);
 
-    static_assert(example::handle_string_is_default() == false, "");
+    static_assert(example::has_default_string() == false, "");
 
     example ex;
-    CHECK(ex.handle_map_is_default() == true);
-    CHECK(ex.handle_unsigned_is_default() == true);
-    CHECK(ex.handle_string_is_default() == false);
+    CHECK(ex.has_default_map() == true);
+    CHECK(ex.has_default_unsigned() == true);
+    CHECK(ex.has_default_string() == false);
     ex.cb_array(1, {data, data + 4});
   }
 }

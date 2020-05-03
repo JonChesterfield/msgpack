@@ -67,13 +67,17 @@ public:
   void cb_string(size_t N, const unsigned char *str) {
     derived().handle_string(N, str);
   }
+
   void cb_boolean(bool x) { derived().handle_boolean(x); }
+
   void cb_signed(int64_t x) { derived().handle_signed(x); }
+
   void cb_unsigned(uint64_t x) { derived().handle_unsigned(x); }
 
   void cb_array_elements(byte_range bytes) {
     derived().handle_array_elements(bytes);
   }
+
   void cb_map_elements(byte_range key, byte_range value) {
     derived().handle_map_elements(key, value);
   }
@@ -90,18 +94,6 @@ public:
   bool cb_ignore_nested_structures() {
     return derived().handle_ignore_nested_structures();
   }
-
-  __attribute__((used)) bool handle_map_is_default() {
-    asm("# handle_map_is_default");
-    return &functors_defaults::handle_map == &Derived::handle_map;
-  }
-
-  __attribute__((used)) bool handle_unsigned_is_default() {
-    asm("# handle_unsigned_is_default");
-    return &functors_defaults::handle_unsigned == &Derived::handle_unsigned;
-  }
-
-  constexpr static bool handle_string_is_default();
 
 private:
   Derived &derived() { return *static_cast<Derived *>(this); }
@@ -205,17 +197,48 @@ private:
     return bytes.start;
   }
 
+public:
+  constexpr static bool has_default_string() {
+    return &functors_defaults::handle_string == &Derived::handle_string;
+  }
+  constexpr static bool has_default_boolean() {
+    return &functors_defaults::handle_boolean == &Derived::handle_boolean;
+  }
+  constexpr static bool has_default_signed() {
+    return &functors_defaults::handle_signed == &Derived::handle_signed;
+  }
+  constexpr static bool has_default_unsigned() {
+    return &functors_defaults::handle_unsigned == &Derived::handle_unsigned;
+  }
+  constexpr static bool has_default_array_elements() {
+    return &functors_defaults::handle_array_elements ==
+           &Derived::handle_array_elements;
+  }
+  constexpr static bool has_default_map_elements() {
+    return &functors_defaults::handle_map_elements ==
+           &Derived::handle_map_elements;
+  }
+  constexpr static bool has_default_array() {
+    return &functors_defaults::handle_array == &Derived::handle_array;
+  }
+  constexpr static bool has_default_map() {
+    return &functors_defaults::handle_map == &Derived::handle_map;
+  }
+
   // correct by default
   bool handle_ignore_nested_structures() { return false; }
 };
 
-// In line rejected with template not instantiated yet
-template <typename Derived>
-constexpr bool functors_defaults<Derived>::handle_string_is_default() {
-  return &functors_defaults::handle_string == &Derived::handle_string;
+struct functors_nop : public functors_defaults<functors_nop> {
+  static_assert(has_default_string() == true, "");
+  static_assert(has_default_boolean() == true, "");
+  static_assert(has_default_signed() == true, "");
+  static_assert(has_default_unsigned() == true, "");
+  static_assert(has_default_array_elements() == true, "");
+  static_assert(has_default_map_elements() == true, "");
+  static_assert(has_default_array() == true, "");
+  static_assert(has_default_map() == true, "");
 };
-
-struct functors_nop : public functors_defaults<functors_nop> {};
 
 struct functors_ignore_nested
     : public functors_defaults<functors_ignore_nested> {
@@ -226,6 +249,10 @@ struct functors_ignore_nested
     return bytes.end;
   }
   bool handle_ignore_nested_structures() { return true; }
+
+  static_assert(has_default_array() == false, "");
+  static_assert(has_default_map() == false, "");
+  static_assert(has_default_map_elements() == true, "");
 };
 
 struct only_apply_if_top_level_is_unsigned
@@ -241,15 +268,15 @@ private:
 };
 
 struct example : public functors_defaults<example> {
-  example() { static_assert(handle_string_is_default() == false, ""); }
+  example() { static_assert(has_default_string() == false, ""); }
 
   // Possible bug here. Adding this == true before the call
   // makes both the others fail
-  // static_assert(handle_string_is_default() == true, "");
+  // static_assert(has_default_string() == true, "");
   void handle_string(size_t N, const unsigned char *str) {
     printf("Called derived handle string\n");
   }
-  static_assert(handle_string_is_default() == false, "");
+  static_assert(has_default_string() == false, "");
 
   // Here it just fails, as it should
   //   static_assert(handle_string_is_default() == true, "");
