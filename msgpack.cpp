@@ -350,38 +350,29 @@ fallback::skip_next_message_templated(const unsigned char *start,
 namespace {
 
 template <bool ResUsed, msgpack::coarse_type cty, typename F>
-bool can_early_return(F f) {
+constexpr bool can_early_return() {
   // If the returned pointer is unused and the function called is known to
   // do nothing other than compute the return pointer, it doesn't need to
   // be called. The CFA needed to prove this in the compiler doesn't appear
-  // to be sufficient yet, so hardcode the assumption that the default impls
-  // do nothing other than compute the return pointer
-  // can be constexpr once std::function api is dropped
-  if (ResUsed) {
-    return false;
-  }
-  if (cty == msgpack::boolean) {
-    return f.has_default_boolean();
-  }
-  if (cty == msgpack::unsigned_integer) {
-    return f.has_default_unsigned();
-  }
-  if (cty == msgpack::signed_integer) {
-    return f.has_default_signed();
-  }
-  if (cty == msgpack::string) {
-    return f.has_default_string();
-  }
-  if (cty == msgpack::array) {
-    return f.has_default_array() && f.has_default_array_elements();
-  }
-  if (cty == msgpack::map) {
-    return f.has_default_map() && f.has_default_map_elements();
-  }
-  if (cty == msgpack::other) {
-    return true;
-  }
-  return false;
+  // to be sufficient yet, so hardcode the implementation detail that the
+  // defaults to nothing other than compute the return pointer
+  // TODO: Rename parts of this mechanism
+  return ResUsed ? false
+                 : cty == msgpack::boolean
+                       ? F::has_default_boolean()
+                       : cty == msgpack::unsigned_integer
+                             ? F::has_default_unsigned()
+                             : cty == msgpack::signed_integer
+                                   ? F::has_default_signed()
+                                   : cty == msgpack::string
+                                         ? F::has_default_string()
+                                         : cty == msgpack::array
+                                               ? F::has_default_array()
+                                               : cty == msgpack::map
+                                                     ? F::has_default_map()
+                                                     : cty == msgpack::other
+                                                           ? true
+                                                           : false;
 }
 
 template <bool ResUsed, msgpack::type ty, typename F>
@@ -405,8 +396,11 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   const uint64_t N = info(start);
 
   constexpr msgpack::coarse_type cty = categorize(ty);
-  if (can_early_return<ResUsed, cty>(f)) {
-    return 0;
+  {
+    constexpr bool early = can_early_return<ResUsed, cty, F>();
+    if (early) {
+      return 0;
+    }
   }
 
   switch (cty) {

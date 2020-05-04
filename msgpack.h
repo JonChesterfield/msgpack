@@ -61,17 +61,15 @@ struct functors {
         return fallback::map(N, bytes, this->cb_map_elements);
       };
 
-
   // std::function implementation can't answer these efficiently
-  static bool has_default_boolean() {return false; }
-  static bool has_default_unsigned() {return false; }
-  static bool has_default_signed() {return false; }
-  static bool has_default_string() {return false; }
-  static bool has_default_array() {return false; }
-  static bool has_default_array_elements() {return false; }
-  static bool has_default_map() {return false; }
-  static bool has_default_map_elements() {return false; }
-
+  static constexpr bool has_default_boolean() { return false; }
+  static constexpr bool has_default_unsigned() { return false; }
+  static constexpr bool has_default_signed() { return false; }
+  static constexpr bool has_default_string() { return false; }
+  static constexpr bool has_default_array() { return false; }
+  static constexpr bool has_default_array_elements() { return false; }
+  static constexpr bool has_default_map() { return false; }
+  static constexpr bool has_default_map_elements() { return false; }
 };
 
 template <typename Derived> class functors_defaults {
