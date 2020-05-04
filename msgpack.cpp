@@ -21,6 +21,48 @@ typedef enum : uint8_t {
 #undef X
 } type;
 
+typedef enum : uint8_t {
+  boolean,
+  unsigned_integer,
+  signed_integer,
+  string,
+  array,
+  map,
+  other,
+} coarse_type;
+
+constexpr bool is_boolean(type ty) { return ty == t || ty == f; }
+constexpr bool is_unsigned_integer(type ty) {
+  return ty == posfixint || ty == uint8 || ty == uint16 || ty == uint32 ||
+         ty == uint64;
+}
+constexpr bool is_signed_integer(type ty) {
+  return ty == negfixint || ty == int8 || ty == int16 || ty == int32 ||
+         ty == int64;
+}
+constexpr bool is_string(type ty) {
+  return ty == fixstr || ty == str8 || ty == str16 || ty == str32;
+}
+constexpr bool is_array(type ty) {
+  return ty == fixarray || ty == array16 || ty == array32;
+}
+constexpr bool is_map(type ty) {
+  return ty == fixmap || ty == map16 || ty == map32;
+}
+constexpr coarse_type categorize(type ty) {
+  // TODO: Change to switch when C++14 can be assumed
+  return is_boolean(ty)
+             ? boolean
+             : is_unsigned_integer(ty)
+                   ? unsigned_integer
+                   : is_signed_integer(ty)
+                         ? signed_integer
+                         : is_string(ty)
+                               ? string
+                               : is_array(ty) ? array
+                                              : is_map(ty) ? map : other;
+}
+
 const char *type_name(type ty) {
   switch (ty) {
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
@@ -313,10 +355,8 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
     return 0;
   }
 
-  // const msgpack::type ty = msgpack::parse_type(*start);
-
-  // Would be better to skip the bytes used calculation when the result value is not
-  // used and the type has no handler registered
+  // Would be better to skip the bytes used calculation when the result value is
+  // not used and the type has no handler registered
   const uint64_t bytes_used = bytes_used_fixed(ty);
   if (available < bytes_used) {
     return 0;
@@ -328,36 +368,26 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   const payload_info_t info = payload_info(ty);
   const uint64_t N = info(start);
 
-  switch (ty) {
-  case msgpack::t:
-  case msgpack::f: {
+  constexpr msgpack::coarse_type cty = categorize(ty);
+
+  switch (cty) {
+  case msgpack::boolean: {
     // t is 0b11000010, f is 0b11000011, masked with 0x1
     f.cb_boolean(N);
     return start + bytes_used;
   }
 
-  case msgpack::posfixint:
-  case msgpack::uint8:
-  case msgpack::uint16:
-  case msgpack::uint32:
-  case msgpack::uint64: {
+  case msgpack::unsigned_integer: {
     f.cb_unsigned(N);
     return start + bytes_used;
   }
 
-  case msgpack::negfixint:
-  case msgpack::int8:
-  case msgpack::int16:
-  case msgpack::int32:
-  case msgpack::int64: {
+  case msgpack::signed_integer: {
     f.cb_signed(bitcast<uint64_t, int64_t>(N));
     return start + bytes_used;
   }
 
-  case msgpack::fixstr:
-  case msgpack::str8:
-  case msgpack::str16:
-  case msgpack::str32: {
+  case msgpack::string: {
     if (available_post_header < N) {
       return 0;
     } else {
@@ -366,33 +396,15 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
     }
   }
 
-  case msgpack::fixarray:
-  case msgpack::array16:
-  case msgpack::array32: {
+  case msgpack::array: {
     return f.cb_array(N, byte_range{start + bytes_used, end});
   }
 
-  case msgpack::fixmap:
-  case msgpack::map16:
-  case msgpack::map32: {
+  case msgpack::map: {
     return f.cb_map(N, {start + bytes_used, end});
   }
 
-  case msgpack::nil:
-  case msgpack::bin8:
-  case msgpack::bin16:
-  case msgpack::bin32:
-  case msgpack::float32:
-  case msgpack::float64:
-  case msgpack::ext8:
-  case msgpack::ext16:
-  case msgpack::ext32:
-  case msgpack::fixext1:
-  case msgpack::fixext2:
-  case msgpack::fixext4:
-  case msgpack::fixext8:
-  case msgpack::fixext16:
-  case msgpack::never_used: {
+  case msgpack::other: {
     if (available_post_header < N) {
       return 0;
     }
