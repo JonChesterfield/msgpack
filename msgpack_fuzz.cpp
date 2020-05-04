@@ -9,6 +9,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+using namespace msgpack;
+
 functors readall_functors() {
   functors f;
   f.cb_string = [](size_t N, const unsigned char *str) {

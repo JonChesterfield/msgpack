@@ -10,6 +10,8 @@ extern "C" {
 
 TEST_CASE("str") { CHECK(helloworld_msgpack_len != 0); }
 
+using namespace msgpack;
+
 void on_matching_string_key_apply_action_to_value(
     byte_range bytes,
     std::function<bool(size_t N, const unsigned char *bytes)> predicate,

@@ -162,6 +162,7 @@ extern "C" void gen_parse_type_tab(void) {
 
 } // namespace msgpack
 
+namespace {
 template <typename T, typename R> R bitcast(T x) {
   static_assert(sizeof(T) == sizeof(R), "");
   R tmp;
@@ -176,7 +177,6 @@ template <typename T, typename R> R bitcast(T x) {
 
 typedef uint64_t (*payload_info_t)(const unsigned char *);
 
-namespace {
 namespace payload {
 uint64_t read_zero(const unsigned char *) { return 0; }
 
@@ -261,7 +261,6 @@ uint64_t read_size_field_s64(const unsigned char *from) {
   return bitcast<int64_t, uint64_t>(res);
 }
 } // namespace payload
-} // namespace
 
 payload_info_t payload_info(msgpack::type ty) {
   using namespace msgpack;
@@ -274,10 +273,12 @@ payload_info_t payload_info(msgpack::type ty) {
   }
   internal_error();
 }
+} // namespace
 
 // Only failure mode is going to be out of bounds
 // Return NULL on out of bounds, otherwise start of the next entry
 
+namespace msgpack {
 namespace fallback {
 
 void nop_string(size_t, const unsigned char *) {}
@@ -335,14 +336,15 @@ const unsigned char *nop_array(uint64_t N, byte_range bytes) {
 }
 
 } // namespace fallback
+} // namespace msgpack
 
-const unsigned char *fallback::skip_next_message(const unsigned char *start,
+const unsigned char *msgpack::fallback::skip_next_message(const unsigned char *start,
                                                  const unsigned char *end) {
   return handle_msgpack({start, end}, functors());
 }
 
 const unsigned char *
-fallback::skip_next_message_templated(const unsigned char *start,
+msgpack::fallback::skip_next_message_templated(const unsigned char *start,
                                       const unsigned char *end) {
   return handle_msgpack({start, end}, functors_nop());
 }
@@ -374,9 +376,10 @@ constexpr bool can_early_return() {
                                                            ? true
                                                            : false;
 }
+}
 
 template <bool ResUsed, msgpack::type ty, typename F>
-const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
+const unsigned char *handle_msgpack_given_type(msgpack::byte_range bytes, F f) {
   const unsigned char *start = bytes.start;
   const unsigned char *end = bytes.end;
   const uint64_t available = end - start;
@@ -390,8 +393,6 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   }
   const uint64_t available_post_header = available - bytes_used;
 
-  // If this is called with a compile time constant ty, can inline the
-  // associated function Means duplication in the following switch
   const payload_info_t info = payload_info(ty);
   const uint64_t N = info(start);
 
@@ -430,7 +431,7 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   }
 
   case msgpack::array: {
-    return f.cb_array(N, byte_range{start + bytes_used, end});
+    return f.cb_array(N, {start + bytes_used, end});
   }
 
   case msgpack::map: {
@@ -449,10 +450,10 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   }
   internal_error();
 }
-} // namespace
 
+namespace {
 template <bool ResUsed, typename F>
-const unsigned char *handle_msgpack_dispatch(byte_range bytes, F f) {
+const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
 
   const unsigned char *start = bytes.start;
   const unsigned char *end = bytes.end;
@@ -481,20 +482,20 @@ const unsigned char *handle_msgpack_dispatch(byte_range bytes, F f) {
 
   internal_error();
 }
+}
 
 template <typename F>
-const unsigned char *handle_msgpack(byte_range bytes, F f) {
+const unsigned char *msgpack::handle_msgpack(msgpack::byte_range bytes, F f) {
   return handle_msgpack_dispatch<true, F>(bytes, f);
 }
 
-template <typename F> void handle_msgpack_void(byte_range bytes, F f) {
-  handle_msgpack_dispatch<false, F>(bytes, f);
+template <typename F> void msgpack::handle_msgpack_void(msgpack::byte_range bytes, F f) {
+ handle_msgpack_dispatch<false, F>(bytes, f);
 }
 
 namespace {
-
 template <msgpack::coarse_type C>
-bool message_is_coarse_type(byte_range bytes) {
+bool message_is_coarse_type(msgpack::byte_range bytes) {
   const uint64_t available = bytes.end - bytes.start;
   // Empty range, contains no typed message
   if (available == 0) {
@@ -513,6 +514,7 @@ bool message_is_coarse_type(byte_range bytes) {
 }
 } // namespace
 
+namespace msgpack {
 bool is_boolean(byte_range bytes) {
   return message_is_coarse_type<msgpack::boolean>(bytes);
 }
@@ -579,7 +581,7 @@ void foreach_array(byte_range bytes, std::function<void(byte_range)> callback) {
   handle_msgpack(bytes, f);
 }
 
-void msgpack::dump(byte_range bytes) {
+void dump(byte_range bytes) {
   functors f;
   unsigned indent = 0;
   const unsigned by = 2;
@@ -652,3 +654,4 @@ void msgpack::dump(byte_range bytes) {
   handle_msgpack(bytes, f);
   printf("\n");
 }
+} // namespace msgpack
