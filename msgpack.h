@@ -295,6 +295,14 @@ void foreach_map(byte_range,
 void foreach_array(byte_range, std::function<void(byte_range)> callback);
 
 namespace msgpack {
+
+bool is_boolean(byte_range);
+bool is_unsigned(byte_range);
+bool is_signed(byte_range);
+bool is_string(byte_range);
+bool is_array(byte_range);
+bool is_map(byte_range);
+
 // Crude approximation to json
 void dump(byte_range);
 } // namespace msgpack

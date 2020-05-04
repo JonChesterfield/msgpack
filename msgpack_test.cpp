@@ -27,6 +27,7 @@ void on_matching_string_key_apply_action_to_value(
   f.cb_map_elements = [&](byte_range key, byte_range value) {
     matched = false;
     const unsigned char *r = handle_msgpack(key, f);
+    (void)r;
     assert(r == value.start);
     if (matched) {
       action(value);

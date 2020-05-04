@@ -346,14 +346,14 @@ fallback::skip_next_message_templated(const unsigned char *start,
   return handle_msgpack({start, end}, functors_nop());
 }
 
+namespace {
+
 template <msgpack::type ty, typename F>
 const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   const unsigned char *start = bytes.start;
   const unsigned char *end = bytes.end;
   const uint64_t available = end - start;
-  if (available == 0) {
-    return 0;
-  }
+  assert(available != 0);
 
   // Would be better to skip the bytes used calculation when the result value is
   // not used and the type has no handler registered
@@ -413,6 +413,7 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   }
   internal_error();
 }
+} // namespace
 
 template <typename F>
 const unsigned char *handle_msgpack(byte_range bytes, F f) {
@@ -443,6 +444,45 @@ const unsigned char *handle_msgpack(byte_range bytes, F f) {
   }
 
   internal_error();
+}
+
+namespace {
+msgpack::coarse_type coarse_type_from_message(byte_range bytes) {
+  const uint64_t available = bytes.end - bytes.start;
+  // Empty range, contains no typed message
+  if (available == 0) {
+    return msgpack::other;
+  }
+
+  const msgpack::type ty = msgpack::parse_type(*bytes.start);
+
+  // truncated header
+  const uint64_t bytes_used = bytes_used_fixed(ty);
+  if (available < bytes_used) {
+    return msgpack::other;
+  }
+
+  return categorize(ty);
+}
+}
+
+bool is_boolean(byte_range bytes) {
+  return coarse_type_from_message(bytes) == msgpack::boolean;
+}
+bool is_unsigned(byte_range bytes) {
+  return coarse_type_from_message(bytes) == msgpack::unsigned_integer;
+}
+bool is_signed(byte_range bytes) {
+  return coarse_type_from_message(bytes) == msgpack::signed_integer;
+}
+bool is_string(byte_range bytes) {
+  return coarse_type_from_message(bytes) == msgpack::string;
+}
+bool is_array(byte_range bytes) {
+  return coarse_type_from_message(bytes) == msgpack::array;
+}
+bool is_map(byte_range bytes) {
+  return coarse_type_from_message(bytes) == msgpack::map;
 }
 
 bool message_is_string(byte_range bytes, const char *needle) {
