@@ -148,6 +148,7 @@ static msgpack::type parse_type2(unsigned char x) {
 
 msgpack::type parse_type(unsigned char x) {
   const bool tab = false;
+  // CFA is failing to eliminate the trailing internal_error call
   return tab ? parse_type2(x) : parse_type1(x);
 }
 
@@ -447,7 +448,9 @@ const unsigned char *handle_msgpack(byte_range bytes, F f) {
 }
 
 namespace {
-msgpack::coarse_type coarse_type_from_message(byte_range bytes) {
+
+template <msgpack::coarse_type C>
+bool message_is_coarse_type(byte_range bytes) {
   const uint64_t available = bytes.end - bytes.start;
   // Empty range, contains no typed message
   if (available == 0) {
@@ -455,34 +458,34 @@ msgpack::coarse_type coarse_type_from_message(byte_range bytes) {
   }
 
   const msgpack::type ty = msgpack::parse_type(*bytes.start);
+  msgpack::coarse_type cty = categorize(ty);
+  if (cty != C) {
+    return false;
+  }
 
   // truncated header
   const uint64_t bytes_used = bytes_used_fixed(ty);
-  if (available < bytes_used) {
-    return msgpack::other;
-  }
-
-  return categorize(ty);
+  return available >= bytes_used;
 }
-}
+} // namespace
 
 bool is_boolean(byte_range bytes) {
-  return coarse_type_from_message(bytes) == msgpack::boolean;
+  return message_is_coarse_type<msgpack::boolean>(bytes);
 }
 bool is_unsigned(byte_range bytes) {
-  return coarse_type_from_message(bytes) == msgpack::unsigned_integer;
+  return message_is_coarse_type<msgpack::unsigned_integer>(bytes);
 }
 bool is_signed(byte_range bytes) {
-  return coarse_type_from_message(bytes) == msgpack::signed_integer;
+  return message_is_coarse_type<msgpack::signed_integer>(bytes);
 }
 bool is_string(byte_range bytes) {
-  return coarse_type_from_message(bytes) == msgpack::string;
+  return message_is_coarse_type<msgpack::string>(bytes);
 }
 bool is_array(byte_range bytes) {
-  return coarse_type_from_message(bytes) == msgpack::array;
+  return message_is_coarse_type<msgpack::array>(bytes);
 }
 bool is_map(byte_range bytes) {
-  return coarse_type_from_message(bytes) == msgpack::map;
+  return message_is_coarse_type<msgpack::map>(bytes);
 }
 
 bool message_is_string(byte_range bytes, const char *needle) {
