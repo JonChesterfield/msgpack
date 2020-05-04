@@ -349,7 +349,42 @@ fallback::skip_next_message_templated(const unsigned char *start,
 
 namespace {
 
-template <msgpack::type ty, typename F>
+template <bool ResUsed, msgpack::coarse_type cty, typename F>
+bool can_early_return(F f) {
+  // If the returned pointer is unused and the function called is known to
+  // do nothing other than compute the return pointer, it doesn't need to
+  // be called. The CFA needed to prove this in the compiler doesn't appear
+  // to be sufficient yet, so hardcode the assumption that the default impls
+  // do nothing other than compute the return pointer
+  // can be constexpr once std::function api is dropped
+  if (ResUsed) {
+    return false;
+  }
+  if (cty == msgpack::boolean) {
+    return f.has_default_boolean();
+  }
+  if (cty == msgpack::unsigned_integer) {
+    return f.has_default_unsigned();
+  }
+  if (cty == msgpack::signed_integer) {
+    return f.has_default_signed();
+  }
+  if (cty == msgpack::string) {
+    return f.has_default_string();
+  }
+  if (cty == msgpack::array) {
+    return f.has_default_array() && f.has_default_array_elements();
+  }
+  if (cty == msgpack::map) {
+    return f.has_default_map() && f.has_default_map_elements();
+  }
+  if (cty == msgpack::other) {
+    return true;
+  }
+  return false;
+}
+
+template <bool ResUsed, msgpack::type ty, typename F>
 const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   const unsigned char *start = bytes.start;
   const unsigned char *end = bytes.end;
@@ -370,6 +405,9 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   const uint64_t N = info(start);
 
   constexpr msgpack::coarse_type cty = categorize(ty);
+  if (can_early_return<ResUsed, cty>(f)) {
+    return 0;
+  }
 
   switch (cty) {
   case msgpack::boolean: {
@@ -406,6 +444,9 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
   }
 
   case msgpack::other: {
+    if (!ResUsed) {
+      return 0;
+    }
     if (available_post_header < N) {
       return 0;
     }
@@ -416,8 +457,8 @@ const unsigned char *handle_msgpack_given_type(byte_range bytes, F f) {
 }
 } // namespace
 
-template <typename F>
-const unsigned char *handle_msgpack(byte_range bytes, F f) {
+template <bool ResUsed, typename F>
+const unsigned char *handle_msgpack_dispatch(byte_range bytes, F f) {
 
   const unsigned char *start = bytes.start;
   const unsigned char *end = bytes.end;
@@ -426,7 +467,7 @@ const unsigned char *handle_msgpack(byte_range bytes, F f) {
     return 0;
   }
   const msgpack::type ty = msgpack::parse_type(*start);
-  const bool asm_markers = true;
+  const bool asm_markers = false;
 
   switch (ty) {
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
@@ -434,7 +475,7 @@ const unsigned char *handle_msgpack(byte_range bytes, F f) {
     if (asm_markers)                                                           \
       asm("# Handle msgpack::" #NAME " begin");                                \
     const unsigned char *res =                                                 \
-        handle_msgpack_given_type<msgpack::NAME, F>(bytes, f);                 \
+        handle_msgpack_given_type<ResUsed, msgpack::NAME, F>(bytes, f);        \
     if (asm_markers)                                                           \
       asm("# Handle msgpack::" #NAME " finish");                               \
     return res;                                                                \
@@ -445,6 +486,15 @@ const unsigned char *handle_msgpack(byte_range bytes, F f) {
   }
 
   internal_error();
+}
+
+template <typename F>
+const unsigned char *handle_msgpack(byte_range bytes, F f) {
+  return handle_msgpack_dispatch<true, F>(bytes, f);
+}
+
+template <typename F> void handle_msgpack_void(byte_range bytes, F f) {
+  handle_msgpack_dispatch<false, F>(bytes, f);
 }
 
 namespace {
@@ -513,6 +563,14 @@ template const unsigned char *handle_msgpack(byte_range,
                                              functors_ignore_nested);
 
 template const unsigned char *handle_msgpack(byte_range, example);
+
+template void handle_msgpack_void(byte_range, functors);
+template void handle_msgpack_void(byte_range, functors_nop);
+template void handle_msgpack_void(byte_range,
+                                  only_apply_if_top_level_is_unsigned);
+template void handle_msgpack_void(byte_range, functors_ignore_nested);
+
+template void handle_msgpack_void(byte_range, example);
 
 void foreach_map(byte_range bytes,
                  std::function<void(byte_range, byte_range)> callback) {

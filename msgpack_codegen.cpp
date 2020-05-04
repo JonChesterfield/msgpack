@@ -7,10 +7,9 @@ extern "C" const unsigned char *nop_handle_msgpack(const unsigned char *start,
   return handle_msgpack({start, end}, f);
 }
 
-extern "C" const unsigned char *
-nop_handle_msgpack_templated(const unsigned char *start,
-                             const unsigned char *end) {
-  return handle_msgpack({start, end}, functors_nop());
+extern "C" void nop_handle_msgpack_templated(const unsigned char *start,
+                                             const unsigned char *end) {
+  handle_msgpack_void({start, end}, functors_nop());
 }
 
 extern "C" const unsigned char *
@@ -19,12 +18,12 @@ nop_handle_msgpack_nonested(const unsigned char *start,
   return handle_msgpack({start, end}, functors_ignore_nested());
 }
 
-extern "C" void
-apply_if_top_level_is_unsigned(const unsigned char *start,
-                               const unsigned char *end,
-                               std::function<void(uint64_t)> f) {
-  only_apply_if_top_level_is_unsigned x(f);
-  handle_msgpack({start, end}, x);
+extern "C" void apply_if_top_level_is_unsigned(const unsigned char *start,
+                                               const unsigned char *end,
+                                               void (*stateless)(uint64_t)) {
+
+  only_apply_if_top_level_is_unsigned x(stateless);
+  handle_msgpack_void({start, end}, x);
 }
 
 extern "C" const unsigned char *expt(const unsigned char *start,

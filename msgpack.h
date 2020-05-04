@@ -60,6 +60,18 @@ struct functors {
       [=](uint64_t N, byte_range bytes) {
         return fallback::map(N, bytes, this->cb_map_elements);
       };
+
+
+  // std::function implementation can't answer these efficiently
+  static bool has_default_boolean() {return false; }
+  static bool has_default_unsigned() {return false; }
+  static bool has_default_signed() {return false; }
+  static bool has_default_string() {return false; }
+  static bool has_default_array() {return false; }
+  static bool has_default_array_elements() {return false; }
+  static bool has_default_map() {return false; }
+  static bool has_default_map_elements() {return false; }
+
 };
 
 template <typename Derived> class functors_defaults {
@@ -286,6 +298,7 @@ struct example : public functors_defaults<example> {
 };
 
 template <typename F> const unsigned char *handle_msgpack(byte_range, F f);
+template <typename F> void handle_msgpack_void(byte_range, F f);
 
 bool message_is_string(byte_range bytes, const char *str);
 
