@@ -269,14 +269,16 @@ struct functors_ignore_nested
 
 struct only_apply_if_top_level_is_unsigned
     : public functors_defaults<only_apply_if_top_level_is_unsigned> {
-  only_apply_if_top_level_is_unsigned(std::function<void(uint64_t)> f) : f(f) {}
+  only_apply_if_top_level_is_unsigned(void (*f)(uint64_t, void *), void *st)
+      : f(f), st(st) {}
 
-  void handle_unsigned(uint64_t x) { f(x); }
+  void handle_unsigned(uint64_t x) { f(x, st); }
 
   bool handle_ignore_nested_structures() { return true; }
 
 private:
-  std::function<void(uint64_t)> f;
+  void (*f)(uint64_t, void *);
+  void *st;
 };
 
 struct example : public functors_defaults<example> {

@@ -20,9 +20,9 @@ nop_handle_msgpack_nonested(const unsigned char *start,
 
 extern "C" void apply_if_top_level_is_unsigned(const unsigned char *start,
                                                const unsigned char *end,
-                                               void (*stateless)(uint64_t)) {
+                                               void (*stateless)(uint64_t,void*), void * st) {
 
-  only_apply_if_top_level_is_unsigned x(stateless);
+  only_apply_if_top_level_is_unsigned x(stateless, st);
   handle_msgpack_void({start, end}, x);
 }
 

@@ -32,7 +32,7 @@ llvm-extract merged.bc -func nop_handle_msgpack_templated  -S -o template.ll
 
 llvm-extract merged.bc -func nop_handle_msgpack_nonested -func _Z23handle_msgpack_dispatchILb1E22functors_ignore_nestedEPKh10byte_rangeT0_ -S -o nonested.ll
 
-llvm-extract merged.bc -func apply_if_top_level_is_unsigned -func _Z14handle_msgpackI35only_apply_if_top_level_is_unsignedEPKh10byte_rangeT_ -S -o unsigned.ll
+llvm-extract merged.bc -func apply_if_top_level_is_unsigned -func _Z23handle_msgpack_dispatchILb0E35only_apply_if_top_level_is_unsignedEPKh10byte_rangeT0_ -func _ZN35only_apply_if_top_level_is_unsigned15handle_unsignedEm -func _ZN17functors_defaultsI35only_apply_if_top_level_is_unsignedE15handle_unsignedEm -S -o unsigned.ll
 
 llvm-dis merged.bc
 
