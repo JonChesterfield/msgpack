@@ -101,68 +101,19 @@ public:
     return derived().handle_map(N, bytes);
   }
 
-  // Influence over implementation efficiency
-  bool cb_ignore_nested_structures() {
-    return derived().handle_ignore_nested_structures();
-  }
-
 private:
   Derived &derived() { return *static_cast<Derived *>(this); }
 
   static const bool verbose = false;
   // Default implementations
-  void handle_string(size_t N, const unsigned char *str) {
-    if (verbose) {
-      char *tmp = (char *)malloc(N + 1);
-      memcpy(tmp, str, N);
-      tmp[N] = '\n';
-      printf("Default handle string %s\n", tmp);
-      free(tmp);
-    }
-    fallback::nop_string(N, str);
-  }
-  void handle_boolean(bool x) {
-    if (verbose) {
-      printf("Default handle bool %u\n", x);
-    }
-    fallback::nop_boolean(x);
-  }
-  void handle_signed(int64_t x) {
-    if (verbose) {
-      printf("Default handle unsigned %ld\n", x);
-    }
-    fallback::nop_signed(x);
-  }
-  void handle_unsigned(uint64_t x) {
-    if (verbose) {
-      printf("Default handle unsigned %lu\n", x);
-    }
-    fallback::nop_unsigned(x);
-  }
-
-  void handle_map_elements(byte_range key, byte_range value) {
-    if (verbose) {
-      printf("Default map elements, ignore key/value\n");
-    }
-    fallback::nop_map_elements(key, value);
-  }
-
-  void handle_array_elements(byte_range bytes) {
-    if (verbose) {
-      printf("Default array elements, ignore bytes\n");
-    }
-    fallback::nop_array_elements(bytes);
-  }
+  void handle_string(size_t, const unsigned char *) {}
+  void handle_boolean(bool) {}
+  void handle_signed(int64_t) {}
+  void handle_unsigned(uint64_t) {}
+  void handle_map_elements(byte_range, byte_range) {}
+  void handle_array_elements(byte_range) {}
 
   const unsigned char *handle_array(uint64_t N, byte_range bytes) {
-    if (verbose) {
-      printf("Default array, N = %lu\n", N);
-    }
-
-    if (derived().cb_ignore_nested_structures()) {
-      return bytes.end;
-    }
-
     for (uint64_t i = 0; i < N; i++) {
       const unsigned char *next =
           fallback::skip_next_message_templated(bytes.start, bytes.end);
@@ -178,13 +129,6 @@ private:
   }
 
   const unsigned char *handle_map(uint64_t N, byte_range bytes) {
-    if (verbose) {
-      printf("Default map, N = %lu\n", N);
-    }
-    if (derived().cb_ignore_nested_structures()) {
-      return bytes.end;
-    }
-
     for (uint64_t i = 0; i < N; i++) {
       const unsigned char *start_key = bytes.start;
       const unsigned char *end_key =
@@ -236,8 +180,6 @@ public:
     return &functors_defaults::handle_map == &Derived::handle_map;
   }
 
-  // correct by default
-  bool handle_ignore_nested_structures() { return false; }
 };
 
 struct functors_nop : public functors_defaults<functors_nop> {
@@ -259,7 +201,6 @@ struct functors_ignore_nested
   const unsigned char *handle_map(uint64_t N, byte_range bytes) {
     return bytes.end;
   }
-  bool handle_ignore_nested_structures() { return true; }
 
   static_assert(has_default_array() == false, "");
   static_assert(has_default_map() == false, "");
@@ -272,8 +213,6 @@ struct only_apply_if_top_level_is_unsigned
       : f(f), st(st) {}
 
   void handle_unsigned(uint64_t x) { f(x, st); }
-
-  bool handle_ignore_nested_structures() { return true; }
 
 private:
   void (*f)(uint64_t, void *);

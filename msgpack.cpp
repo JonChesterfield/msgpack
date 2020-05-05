@@ -31,36 +31,39 @@ typedef enum : uint8_t {
   other,
 } coarse_type;
 
-constexpr bool is_boolean(type ty) { return ty == t || ty == f; }
+namespace cat {
+constexpr bool is_boolean(type ty) { return (ty == t || ty == f); }
 constexpr bool is_unsigned_integer(type ty) {
-  return ty == posfixint || ty == uint8 || ty == uint16 || ty == uint32 ||
-         ty == uint64;
+  return (ty == posfixint || ty == uint8 || ty == uint16 || ty == uint32 ||
+          ty == uint64);
 }
 constexpr bool is_signed_integer(type ty) {
-  return ty == negfixint || ty == int8 || ty == int16 || ty == int32 ||
-         ty == int64;
+  return (ty == negfixint || ty == int8 || ty == int16 || ty == int32 ||
+          ty == int64);
 }
 constexpr bool is_string(type ty) {
-  return ty == fixstr || ty == str8 || ty == str16 || ty == str32;
+  return (ty == fixstr || ty == str8 || ty == str16 || ty == str32);
 }
 constexpr bool is_array(type ty) {
-  return ty == fixarray || ty == array16 || ty == array32;
+  return (ty == fixarray || ty == array16 || ty == array32);
 }
 constexpr bool is_map(type ty) {
-  return ty == fixmap || ty == map16 || ty == map32;
+  return (ty == fixmap || ty == map16 || ty == map32);
 }
+} // namespace cat
 constexpr coarse_type categorize(type ty) {
   // TODO: Change to switch when C++14 can be assumed
-  return is_boolean(ty)
+  return cat::is_boolean(ty)
              ? boolean
-             : is_unsigned_integer(ty)
+             : cat::is_unsigned_integer(ty)
                    ? unsigned_integer
-                   : is_signed_integer(ty)
+                   : cat::is_signed_integer(ty)
                          ? signed_integer
-                         : is_string(ty)
+                         : cat::is_string(ty)
                                ? string
-                               : is_array(ty) ? array
-                                              : is_map(ty) ? map : other;
+                               : cat::is_array(ty)
+                                     ? array
+                                     : cat::is_map(ty) ? map : other;
 }
 
 const char *type_name(type ty) {
@@ -296,7 +299,6 @@ const unsigned char *array(uint64_t N, byte_range bytes,
       return 0;
     }
     callback(bytes);
-
     bytes.start = next;
   }
   return bytes.start;
@@ -308,20 +310,15 @@ const unsigned char *map(uint64_t N, byte_range bytes,
   for (uint64_t i = 0; i < N; i++) {
     const unsigned char *start_key = bytes.start;
     const unsigned char *end_key = skip_next_message(start_key, bytes.end);
-
     if (!end_key) {
       break;
     }
-
     const unsigned char *start_value = end_key;
     const unsigned char *end_value = skip_next_message(start_value, bytes.end);
-
     if (!end_value) {
       break;
     }
-
     callback({start_key, end_key}, {start_value, end_value});
-
     bytes.start = end_value;
   }
   return bytes.start;
@@ -335,19 +332,18 @@ const unsigned char *nop_array(uint64_t N, byte_range bytes) {
   return array(N, bytes, nop_array_elements);
 }
 
-} // namespace fallback
-} // namespace msgpack
-
-const unsigned char *msgpack::fallback::skip_next_message(const unsigned char *start,
-                                                 const unsigned char *end) {
+const unsigned char *skip_next_message(const unsigned char *start,
+                                       const unsigned char *end) {
   return handle_msgpack({start, end}, functors());
 }
 
-const unsigned char *
-msgpack::fallback::skip_next_message_templated(const unsigned char *start,
-                                      const unsigned char *end) {
+const unsigned char *skip_next_message_templated(const unsigned char *start,
+                                                 const unsigned char *end) {
   return handle_msgpack({start, end}, functors_nop());
 }
+
+} // namespace fallback
+} // namespace msgpack
 
 namespace {
 
@@ -376,7 +372,7 @@ constexpr bool can_early_return() {
                                                            ? true
                                                            : false;
 }
-}
+} // namespace
 
 template <bool ResUsed, msgpack::type ty, typename F>
 const unsigned char *handle_msgpack_given_type(msgpack::byte_range bytes, F f) {
@@ -482,15 +478,16 @@ const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
 
   internal_error();
 }
-}
+} // namespace
 
 template <typename F>
 const unsigned char *msgpack::handle_msgpack(msgpack::byte_range bytes, F f) {
   return handle_msgpack_dispatch<true, F>(bytes, f);
 }
 
-template <typename F> void msgpack::handle_msgpack_void(msgpack::byte_range bytes, F f) {
- handle_msgpack_dispatch<false, F>(bytes, f);
+template <typename F>
+void msgpack::handle_msgpack_void(msgpack::byte_range bytes, F f) {
+  handle_msgpack_dispatch<false, F>(bytes, f);
 }
 
 namespace {
@@ -515,25 +512,6 @@ bool message_is_coarse_type(msgpack::byte_range bytes) {
 } // namespace
 
 namespace msgpack {
-bool is_boolean(byte_range bytes) {
-  return message_is_coarse_type<msgpack::boolean>(bytes);
-}
-bool is_unsigned(byte_range bytes) {
-  return message_is_coarse_type<msgpack::unsigned_integer>(bytes);
-}
-bool is_signed(byte_range bytes) {
-  return message_is_coarse_type<msgpack::signed_integer>(bytes);
-}
-bool is_string(byte_range bytes) {
-  return message_is_coarse_type<msgpack::string>(bytes);
-}
-bool is_array(byte_range bytes) {
-  return message_is_coarse_type<msgpack::array>(bytes);
-}
-bool is_map(byte_range bytes) {
-  return message_is_coarse_type<msgpack::map>(bytes);
-}
-
 bool message_is_string(byte_range bytes, const char *needle) {
   bool matched = false;
   functors f;
@@ -551,23 +529,6 @@ bool message_is_string(byte_range bytes, const char *needle) {
   return matched;
 }
 
-template const unsigned char *handle_msgpack(byte_range, functors);
-template const unsigned char *handle_msgpack(byte_range, functors_nop);
-template const unsigned char *
-    handle_msgpack(byte_range, only_apply_if_top_level_is_unsigned);
-template const unsigned char *handle_msgpack(byte_range,
-                                             functors_ignore_nested);
-
-template const unsigned char *handle_msgpack(byte_range, example);
-
-template void handle_msgpack_void(byte_range, functors);
-template void handle_msgpack_void(byte_range, functors_nop);
-template void handle_msgpack_void(byte_range,
-                                  only_apply_if_top_level_is_unsigned);
-template void handle_msgpack_void(byte_range, functors_ignore_nested);
-
-template void handle_msgpack_void(byte_range, example);
-
 void foreach_map(byte_range bytes,
                  std::function<void(byte_range, byte_range)> callback) {
   functors f;
@@ -579,6 +540,25 @@ void foreach_array(byte_range bytes, std::function<void(byte_range)> callback) {
   functors f;
   f.cb_array_elements = callback;
   handle_msgpack(bytes, f);
+}
+
+  bool is_boolean(byte_range bytes) {
+  return message_is_coarse_type<msgpack::boolean>(bytes);
+}
+bool is_unsigned(byte_range bytes) {
+  return message_is_coarse_type<msgpack::unsigned_integer>(bytes);
+}
+bool is_signed(byte_range bytes) {
+  return message_is_coarse_type<msgpack::signed_integer>(bytes);
+}
+bool is_string(byte_range bytes) {
+  return message_is_coarse_type<msgpack::string>(bytes);
+}
+bool is_array(byte_range bytes) {
+  return message_is_coarse_type<msgpack::array>(bytes);
+}
+bool is_map(byte_range bytes) {
+  return message_is_coarse_type<msgpack::map>(bytes);
 }
 
 void dump(byte_range bytes) {
@@ -654,4 +634,24 @@ void dump(byte_range bytes) {
   handle_msgpack(bytes, f);
   printf("\n");
 }
+
+
+  // instantiations
+template const unsigned char *handle_msgpack(byte_range, functors);
+template const unsigned char *handle_msgpack(byte_range, functors_nop);
+template const unsigned char *
+    handle_msgpack(byte_range, only_apply_if_top_level_is_unsigned);
+template const unsigned char *handle_msgpack(byte_range,
+                                             functors_ignore_nested);
+
+template const unsigned char *handle_msgpack(byte_range, example);
+
+template void handle_msgpack_void(byte_range, functors);
+template void handle_msgpack_void(byte_range, functors_nop);
+template void handle_msgpack_void(byte_range,
+                                  only_apply_if_top_level_is_unsigned);
+template void handle_msgpack_void(byte_range, functors_ignore_nested);
+
+template void handle_msgpack_void(byte_range, example);
+
 } // namespace msgpack
