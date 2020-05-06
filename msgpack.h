@@ -464,11 +464,20 @@ template <typename F> void handle_msgpack_void(byte_range bytes, F f) {
 
 bool message_is_string(byte_range bytes, const char *str);
 
-template <typename C> void foreach_map(byte_range bytes, C callback) {
+template <typename C> void foronly_string(byte_range bytes, C callback) {
   struct inner : functors_defaults<inner> {
     inner(C &cb) : cb(cb) {}
     C &cb;
-    void handle_map_elements(byte_range key, byte_range value) { cb(key, value); }
+    void handle_string(size_t N, const unsigned char *str) { cb(N, str); }
+  };
+  handle_msgpack<inner>(bytes, {callback});
+}
+
+template <typename C> void foronly_unsigned(byte_range bytes, C callback) {
+  struct inner : functors_defaults<inner> {
+    inner(C &cb) : cb(cb) {}
+    C &cb;
+    void handle_unsigned(uint64_t x) { cb(x); }
   };
   handle_msgpack<inner>(bytes, {callback});
 }
@@ -478,6 +487,15 @@ template <typename C> void foreach_array(byte_range bytes, C callback) {
     inner(C &cb) : cb(cb) {}
     C &cb;
     void handle_array_elements(byte_range element) { cb(element); }
+  };
+  handle_msgpack<inner>(bytes, {callback});
+}
+
+template <typename C> void foreach_map(byte_range bytes, C callback) {
+  struct inner : functors_defaults<inner> {
+    inner(C &cb) : cb(cb) {}
+    C &cb;
+    void handle_map_elements(byte_range key, byte_range value) { cb(key, value); }
   };
   handle_msgpack<inner>(bytes, {callback});
 }

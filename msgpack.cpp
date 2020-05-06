@@ -7,6 +7,7 @@
 #include "msgpack.h"
 
 namespace msgpack {
+
 [[noreturn]] void internal_error() {
   printf("internal error\n");
   exit(1);
@@ -117,6 +118,7 @@ template <typename T, typename R> R bitcast(T x) {
 }
 template int64_t bitcast<uint64_t, int64_t>(uint64_t);
 } // namespace msgpack
+
 // Helper functions for reading additional payload from the header
 // Depending on the type, this can be a number of bytes, elements,
 // key-value pairs or an embedded integer.
@@ -210,6 +212,7 @@ uint64_t read_size_field_s64(const unsigned char *from) {
 } // namespace
 
 namespace msgpack {
+
 payload_info_t payload_info(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
@@ -309,27 +312,17 @@ bool message_is_coarse_type(msgpack::byte_range bytes) {
 } // namespace
 
 namespace msgpack {
-template <typename C>
-struct message_is_string_inner : functors_defaults<message_is_string_inner<C>> {
-  message_is_string_inner(C &cb) : cb(cb) {}
-  C &cb;
-  void cb_string(size_t N, const unsigned char *str) { cb(N, str); }
-};
-
 bool message_is_string(byte_range bytes, const char *needle) {
   bool matched = false;
   size_t needleN = strlen(needle);
 
-  auto L = [=, &matched](size_t N, const unsigned char *str) {
+  foronly_string(bytes, [=, &matched](size_t N, const unsigned char *str) {
     if (N == needleN) {
       if (memcmp(needle, str, N) == 0) {
         matched = true;
       }
     }
-  };
-
-  using Fty = message_is_string_inner<decltype(L)>;
-  handle_msgpack<Fty>(bytes, L);
+  });
   return matched;
 }
 
@@ -389,6 +382,7 @@ void dump(byte_range bytes) {
 
       return bytes.start;
     }
+
     const unsigned char *handle_map(uint64_t N, byte_range bytes) {
       printf("\n%*s{\n", indent, "");
       indent += by;
@@ -413,7 +407,6 @@ void dump(byte_range bytes) {
         }
 
         printf(",\n");
-
         bytes.start = end_value;
       }
 
