@@ -468,7 +468,7 @@ template <typename C> void foreach_map(byte_range bytes, C callback) {
   struct inner : functors_defaults<inner> {
     inner(C &cb) : cb(cb) {}
     C &cb;
-    void cb_map_elements(byte_range key, byte_range value) { cb(key, value); }
+    void handle_map_elements(byte_range key, byte_range value) { cb(key, value); }
   };
   handle_msgpack<inner>(bytes, {callback});
 }
@@ -477,7 +477,7 @@ template <typename C> void foreach_array(byte_range bytes, C callback) {
   struct inner : functors_defaults<inner> {
     inner(C &cb) : cb(cb) {}
     C &cb;
-    void cb_array_elements(byte_range element) { cb(element); }
+    void handle_array_elements(byte_range element) { cb(element); }
   };
   handle_msgpack<inner>(bytes, {callback});
 }
