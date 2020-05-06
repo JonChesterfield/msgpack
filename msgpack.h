@@ -58,7 +58,7 @@ const unsigned char *map(uint64_t N, byte_range,
                          std::function<void(byte_range, byte_range)> callback);
 } // namespace fallback
 
-struct functors {
+struct functors_obsolete {
 
   std::function<void(size_t, const unsigned char *)> cb_string =
       fallback::nop_string;
@@ -202,43 +202,6 @@ public:
   constexpr static bool has_default_map() {
     return &functors_defaults::handle_map == &Derived::handle_map;
   }
-};
-
-struct functors_nop : public functors_defaults<functors_nop> {
-  static_assert(has_default_string() == true, "");
-  static_assert(has_default_boolean() == true, "");
-  static_assert(has_default_signed() == true, "");
-  static_assert(has_default_unsigned() == true, "");
-  static_assert(has_default_array_elements() == true, "");
-  static_assert(has_default_map_elements() == true, "");
-  static_assert(has_default_array() == true, "");
-  static_assert(has_default_map() == true, "");
-};
-
-struct functors_ignore_nested
-    : public functors_defaults<functors_ignore_nested> {
-  const unsigned char *handle_array(uint64_t N, byte_range bytes) {
-    return bytes.end;
-  }
-  const unsigned char *handle_map(uint64_t N, byte_range bytes) {
-    return bytes.end;
-  }
-
-  static_assert(has_default_array() == false, "");
-  static_assert(has_default_map() == false, "");
-  static_assert(has_default_map_elements() == true, "");
-};
-
-struct only_apply_if_top_level_is_unsigned
-    : public functors_defaults<only_apply_if_top_level_is_unsigned> {
-  only_apply_if_top_level_is_unsigned(void (*f)(uint64_t, void *), void *st)
-      : f(f), st(st) {}
-
-  void handle_unsigned(uint64_t x) { f(x, st); }
-
-private:
-  void (*f)(uint64_t, void *);
-  void *st;
 };
 
 struct example : public functors_defaults<example> {
@@ -431,7 +394,7 @@ const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
     return 0;
   }
   const msgpack::type ty = msgpack::parse_type(*start);
-  const bool asm_markers = true;
+  const bool asm_markers = false;
 
   switch (ty) {
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
@@ -470,7 +433,7 @@ template <typename C> void foronly_string(byte_range bytes, C callback) {
     C &cb;
     void handle_string(size_t N, const unsigned char *str) { cb(N, str); }
   };
-  handle_msgpack<inner>(bytes, {callback});
+  handle_msgpack_void<inner>(bytes, {callback});
 }
 
 template <typename C> void foronly_unsigned(byte_range bytes, C callback) {
@@ -493,7 +456,7 @@ template <typename C> void foreach_array(byte_range bytes, C callback) {
     C &cb;
     void handle_array_elements(byte_range element) { cb(element); }
   };
-  handle_msgpack<inner>(bytes, {callback});
+  handle_msgpack_void<inner>(bytes, {callback});
 }
 
 template <typename C> void foreach_map(byte_range bytes, C callback) {
@@ -502,7 +465,7 @@ template <typename C> void foreach_map(byte_range bytes, C callback) {
     C &cb;
     void handle_map_elements(byte_range key, byte_range value) { cb(key, value); }
   };
-  handle_msgpack<inner>(bytes, {callback});
+  handle_msgpack_void<inner>(bytes, {callback});
 }
 
 bool is_boolean(byte_range);

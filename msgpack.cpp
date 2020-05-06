@@ -277,14 +277,25 @@ const unsigned char *nop_array(uint64_t N, byte_range bytes) {
   return array(N, bytes, nop_array_elements);
 }
 
+struct functors_nop : public functors_defaults<functors_nop> {
+  static_assert(has_default_string() == true, "");
+  static_assert(has_default_boolean() == true, "");
+  static_assert(has_default_signed() == true, "");
+  static_assert(has_default_unsigned() == true, "");
+  static_assert(has_default_array_elements() == true, "");
+  static_assert(has_default_map_elements() == true, "");
+  static_assert(has_default_array() == true, "");
+  static_assert(has_default_map() == true, "");
+};
+
 const unsigned char *skip_next_message(const unsigned char *start,
                                        const unsigned char *end) {
-  return handle_msgpack({start, end}, functors());
+  return handle_msgpack({start, end}, functors_nop());
 }
 
 const unsigned char *skip_next_message_templated(const unsigned char *start,
                                                  const unsigned char *end) {
-  return handle_msgpack({start, end}, functors_nop());
+  return skip_next_message(start, end);
 }
 
 } // namespace fallback

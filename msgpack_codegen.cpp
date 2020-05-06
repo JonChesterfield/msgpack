@@ -3,39 +3,26 @@
 
 using namespace msgpack;
 
-extern "C" const unsigned char *nop_handle_msgpack(const unsigned char *start,
-                                                   const unsigned char *end) {
-  functors f;
-  return handle_msgpack({start, end}, f);
+extern "C" const unsigned char *
+skip_next_message_example(const unsigned char *start,
+                          const unsigned char *end) {
+  return fallback::skip_next_message_templated(start, end);
 }
 
-extern "C" void nop_handle_msgpack_templated(const unsigned char *start,
-                                             const unsigned char *end) {
+extern "C" void nop_handle_msgpack_example(const unsigned char *start,
+                                           const unsigned char *end) {
+  struct functors_nop : public functors_defaults<functors_nop> {};
   handle_msgpack_void({start, end}, functors_nop());
 }
 
-extern "C" const unsigned char *
-nop_handle_msgpack_nonested(const unsigned char *start,
-                            const unsigned char *end) {
-  return handle_msgpack({start, end}, functors_ignore_nested());
-}
-
-extern "C" void apply_if_top_level_is_unsigned(const unsigned char *start,
-                                               const unsigned char *end,
-                                               void (*stateless)(uint64_t,void*), void * st) {
-
-  only_apply_if_top_level_is_unsigned x(stateless, st);
-  handle_msgpack_void({start, end}, x);
-}
-
-
-extern "C" void foronly_unsigned_example(byte_range bytes, void (*cb)(uint64_t))
-{
+extern "C" void foronly_unsigned_example(byte_range bytes,
+                                         void (*cb)(uint64_t)) {
   foronly_unsigned(bytes, cb);
 }
 
-extern "C" void foronly_string_example(byte_range bytes, void (*cb)(size_t,const unsigned char *))
-{
+extern "C" void foronly_string_example(byte_range bytes,
+                                       void (*cb)(size_t,
+                                                  const unsigned char *)) {
   foronly_string(bytes, cb);
 }
 
