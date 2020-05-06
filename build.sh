@@ -34,9 +34,12 @@ llvm-extract merged.bc -func nop_handle_msgpack_nonested -S -o nonested.ll
 
 llvm-extract merged.bc -func apply_if_top_level_is_unsigned   -S -o unsigned.ll
 
-llvm-dis merged.bc
+llvm-extract merged.bc -func foronly_unsigned_example -func _ZN7msgpack19handle_msgpack_voidIZNS_16foronly_unsignedIPFvmEEEvNS_10byte_rangeET_E5innerEEvS4_S5_ -S -o foronly_unsigned_example.ll
 
-$LLC baseline.ll -o baseline.s
-$LLC template.ll -o template.s
+llvm-extract merged.bc -func foronly_string_example -S -o foronly_string_example.ll
+
+
+llvm-dis merged.bc
+for i in *.ll; do $LLC $i; done
 
 time  ./msgpack.exe

@@ -431,7 +431,7 @@ const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
     return 0;
   }
   const msgpack::type ty = msgpack::parse_type(*start);
-  const bool asm_markers = false;
+  const bool asm_markers = true;
 
   switch (ty) {
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
@@ -478,8 +478,13 @@ template <typename C> void foronly_unsigned(byte_range bytes, C callback) {
     inner(C &cb) : cb(cb) {}
     C &cb;
     void handle_unsigned(uint64_t x) { cb(x); }
+
   };
-  handle_msgpack<inner>(bytes, {callback});
+
+  static_assert(inner::has_default_map() == true, "");
+  static_assert(inner::has_default_unsigned() == false, "");
+
+  handle_msgpack_void<inner>(bytes, {callback});
 }
 
 template <typename C> void foreach_array(byte_range bytes, C callback) {

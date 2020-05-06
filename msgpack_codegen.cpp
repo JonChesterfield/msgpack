@@ -28,6 +28,17 @@ extern "C" void apply_if_top_level_is_unsigned(const unsigned char *start,
   handle_msgpack_void({start, end}, x);
 }
 
+
+extern "C" void foronly_unsigned_example(byte_range bytes, void (*cb)(uint64_t))
+{
+  foronly_unsigned(bytes, cb);
+}
+
+extern "C" void foronly_string_example(byte_range bytes, void (*cb)(size_t,const unsigned char *))
+{
+  foronly_string(bytes, cb);
+}
+
 extern "C" const unsigned char *expt(const unsigned char *start,
                                      const unsigned char *end) {
 
