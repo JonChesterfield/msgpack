@@ -309,12 +309,18 @@ bool message_is_coarse_type(msgpack::byte_range bytes) {
 } // namespace
 
 namespace msgpack {
+template <typename C>
+struct message_is_string_inner : functors_defaults<message_is_string_inner<C>> {
+  message_is_string_inner(C &cb) : cb(cb) {}
+  C &cb;
+  void cb_string(size_t N, const unsigned char *str) { cb(N, str); }
+};
+
 bool message_is_string(byte_range bytes, const char *needle) {
   bool matched = false;
-  functors f;
   size_t needleN = strlen(needle);
 
-  f.cb_string = [=, &matched](size_t N, const unsigned char *str) {
+  auto L = [=, &matched](size_t N, const unsigned char *str) {
     if (N == needleN) {
       if (memcmp(needle, str, N) == 0) {
         matched = true;
@@ -322,21 +328,9 @@ bool message_is_string(byte_range bytes, const char *needle) {
     }
   };
 
-  handle_msgpack(bytes, f);
+  using Fty = message_is_string_inner<decltype(L)>;
+  handle_msgpack<Fty>(bytes, L);
   return matched;
-}
-
-void foreach_map(byte_range bytes,
-                 std::function<void(byte_range, byte_range)> callback) {
-  functors f;
-  f.cb_map_elements = callback;
-  handle_msgpack(bytes, f);
-}
-
-void foreach_array(byte_range bytes, std::function<void(byte_range)> callback) {
-  functors f;
-  f.cb_array_elements = callback;
-  handle_msgpack(bytes, f);
 }
 
 bool is_boolean(byte_range bytes) {
@@ -359,6 +353,7 @@ bool is_map(byte_range bytes) {
 }
 
 void dump(byte_range bytes) {
+ 
   functors f;
   unsigned indent = 0;
   const unsigned by = 2;

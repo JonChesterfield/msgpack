@@ -464,10 +464,23 @@ template <typename F> void handle_msgpack_void(byte_range bytes, F f) {
 
 bool message_is_string(byte_range bytes, const char *str);
 
-void foreach_map(byte_range,
-                 std::function<void(byte_range, byte_range)> callback);
+template <typename C> void foreach_map(byte_range bytes, C callback) {
+  struct inner : functors_defaults<inner> {
+    inner(C &cb) : cb(cb) {}
+    C &cb;
+    void cb_map_elements(byte_range key, byte_range value) { cb(key, value); }
+  };
+  handle_msgpack<inner>(bytes, {callback});
+}
 
-void foreach_array(byte_range, std::function<void(byte_range)> callback);
+template <typename C> void foreach_array(byte_range bytes, C callback) {
+  struct inner : functors_defaults<inner> {
+    inner(C &cb) : cb(cb) {}
+    C &cb;
+    void cb_array_elements(byte_range element) { cb(element); }
+  };
+  handle_msgpack<inner>(bytes, {callback});
+}
 
 bool is_boolean(byte_range);
 bool is_unsigned(byte_range);
