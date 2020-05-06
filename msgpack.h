@@ -39,62 +39,7 @@ namespace fallback {
 const unsigned char *skip_next_message(const unsigned char *start,
                                        const unsigned char *end);
 
-const unsigned char *skip_next_message_templated(const unsigned char *start,
-                                                 const unsigned char *end);
-
-void nop_string(size_t, const unsigned char *);
-void nop_signed(int64_t);
-void nop_unsigned(uint64_t);
-void nop_boolean(bool);
-void nop_array_elements(byte_range);
-void nop_map_elements(byte_range, byte_range);
-
-const unsigned char *nop_map(uint64_t N, byte_range);
-const unsigned char *nop_array(uint64_t N, byte_range);
-
-const unsigned char *array(uint64_t N, byte_range,
-                           std::function<void(byte_range)> callback);
-const unsigned char *map(uint64_t N, byte_range,
-                         std::function<void(byte_range, byte_range)> callback);
 } // namespace fallback
-
-struct functors_obsolete {
-
-  std::function<void(size_t, const unsigned char *)> cb_string =
-      fallback::nop_string;
-
-  std::function<void(int64_t)> cb_signed = fallback::nop_signed;
-
-  std::function<void(uint64_t)> cb_unsigned = fallback::nop_unsigned;
-
-  std::function<void(bool)> cb_boolean = fallback::nop_boolean;
-
-  std::function<void(byte_range, byte_range)> cb_map_elements =
-      fallback::nop_map_elements;
-
-  std::function<void(byte_range)> cb_array_elements =
-      fallback::nop_array_elements;
-
-  std::function<const unsigned char *(uint64_t N, byte_range)> cb_array =
-      [=](uint64_t N, byte_range bytes) {
-        return fallback::array(N, bytes, this->cb_array_elements);
-      };
-
-  std::function<const unsigned char *(uint64_t N, byte_range)> cb_map =
-      [=](uint64_t N, byte_range bytes) {
-        return fallback::map(N, bytes, this->cb_map_elements);
-      };
-
-  // std::function implementation can't answer these efficiently
-  static constexpr bool has_default_boolean() { return false; }
-  static constexpr bool has_default_unsigned() { return false; }
-  static constexpr bool has_default_signed() { return false; }
-  static constexpr bool has_default_string() { return false; }
-  static constexpr bool has_default_array() { return false; }
-  static constexpr bool has_default_array_elements() { return false; }
-  static constexpr bool has_default_map() { return false; }
-  static constexpr bool has_default_map_elements() { return false; }
-};
 
 template <typename Derived> class functors_defaults {
 public:
@@ -139,7 +84,7 @@ private:
   const unsigned char *handle_array(uint64_t N, byte_range bytes) {
     for (uint64_t i = 0; i < N; i++) {
       const unsigned char *next =
-          fallback::skip_next_message_templated(bytes.start, bytes.end);
+          fallback::skip_next_message(bytes.start, bytes.end);
       if (!next) {
         return nullptr;
       }
@@ -155,7 +100,7 @@ private:
     for (uint64_t i = 0; i < N; i++) {
       const unsigned char *start_key = bytes.start;
       const unsigned char *end_key =
-          fallback::skip_next_message_templated(start_key, bytes.end);
+          fallback::skip_next_message(start_key, bytes.end);
 
       if (!end_key) {
         return nullptr;
@@ -163,7 +108,7 @@ private:
 
       const unsigned char *start_value = end_key;
       const unsigned char *end_value =
-          fallback::skip_next_message_templated(start_value, bytes.end);
+          fallback::skip_next_message(start_value, bytes.end);
 
       if (!end_value) {
         return nullptr;
@@ -394,7 +339,7 @@ const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
     return 0;
   }
   const msgpack::type ty = msgpack::parse_type(*start);
-  const bool asm_markers = false;
+  const bool asm_markers = true;
 
   switch (ty) {
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
@@ -433,6 +378,8 @@ template <typename C> void foronly_string(byte_range bytes, C callback) {
     C &cb;
     void handle_string(size_t N, const unsigned char *str) { cb(N, str); }
   };
+  static_assert(!inner::has_default_string(), "");
+  static_assert(inner::has_default_map(), "");
   handle_msgpack_void<inner>(bytes, {callback});
 }
 
@@ -441,7 +388,6 @@ template <typename C> void foronly_unsigned(byte_range bytes, C callback) {
     inner(C &cb) : cb(cb) {}
     C &cb;
     void handle_unsigned(uint64_t x) { cb(x); }
-
   };
 
   static_assert(inner::has_default_map() == true, "");
@@ -463,7 +409,9 @@ template <typename C> void foreach_map(byte_range bytes, C callback) {
   struct inner : functors_defaults<inner> {
     inner(C &cb) : cb(cb) {}
     C &cb;
-    void handle_map_elements(byte_range key, byte_range value) { cb(key, value); }
+    void handle_map_elements(byte_range key, byte_range value) {
+      cb(key, value);
+    }
   };
   handle_msgpack_void<inner>(bytes, {callback});
 }

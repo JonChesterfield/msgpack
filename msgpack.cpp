@@ -225,58 +225,6 @@ payload_info_t payload_info(msgpack::type ty) {
   internal_error();
 }
 
-// Only failure mode is going to be out of bounds
-// Return NULL on out of bounds, otherwise start of the next entry
-namespace fallback {
-
-void nop_string(size_t, const unsigned char *) {}
-void nop_signed(int64_t) {}
-void nop_unsigned(uint64_t) {}
-void nop_boolean(bool) {}
-void nop_array_elements(byte_range) {}
-void nop_map_elements(byte_range, byte_range) {}
-
-const unsigned char *array(uint64_t N, byte_range bytes,
-                           std::function<void(byte_range)> callback) {
-  for (uint64_t i = 0; i < N; i++) {
-    const unsigned char *next = skip_next_message(bytes.start, bytes.end);
-    if (!next) {
-      return 0;
-    }
-    callback(bytes);
-    bytes.start = next;
-  }
-  return bytes.start;
-}
-
-const unsigned char *map(uint64_t N, byte_range bytes,
-                         std::function<void(byte_range, byte_range)> callback) {
-
-  for (uint64_t i = 0; i < N; i++) {
-    const unsigned char *start_key = bytes.start;
-    const unsigned char *end_key = skip_next_message(start_key, bytes.end);
-    if (!end_key) {
-      break;
-    }
-    const unsigned char *start_value = end_key;
-    const unsigned char *end_value = skip_next_message(start_value, bytes.end);
-    if (!end_value) {
-      break;
-    }
-    callback({start_key, end_key}, {start_value, end_value});
-    bytes.start = end_value;
-  }
-  return bytes.start;
-}
-
-const unsigned char *nop_map(uint64_t N, byte_range bytes) {
-  return map(N, bytes, nop_map_elements);
-}
-
-const unsigned char *nop_array(uint64_t N, byte_range bytes) {
-  return array(N, bytes, nop_array_elements);
-}
-
 struct functors_nop : public functors_defaults<functors_nop> {
   static_assert(has_default_string() == true, "");
   static_assert(has_default_boolean() == true, "");
@@ -288,17 +236,11 @@ struct functors_nop : public functors_defaults<functors_nop> {
   static_assert(has_default_map() == true, "");
 };
 
-const unsigned char *skip_next_message(const unsigned char *start,
-                                       const unsigned char *end) {
+const unsigned char *fallback::skip_next_message(const unsigned char *start,
+                                                 const unsigned char *end) {
   return handle_msgpack({start, end}, functors_nop());
 }
 
-const unsigned char *skip_next_message_templated(const unsigned char *start,
-                                                 const unsigned char *end) {
-  return skip_next_message(start, end);
-}
-
-} // namespace fallback
 } // namespace msgpack
 
 namespace {

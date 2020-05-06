@@ -6,7 +6,11 @@ using namespace msgpack;
 extern "C" const unsigned char *
 skip_next_message_example(const unsigned char *start,
                           const unsigned char *end) {
-  return fallback::skip_next_message_templated(start, end);
+  return fallback::skip_next_message(start, end);
+}
+
+extern "C" bool message_is_string_example(byte_range bytes, const char *str) {
+  return message_is_string(bytes, str);
 }
 
 extern "C" void nop_handle_msgpack_example(const unsigned char *start,
