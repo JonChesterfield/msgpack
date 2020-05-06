@@ -11,33 +11,28 @@
 
 using namespace msgpack;
 
-functors readall_functors() {
-  functors f;
-  f.cb_string = [](size_t N, const unsigned char *str) {
+struct functors_readall : functors_defaults<functors_readall> {
+  void handle_string(size_t N, const unsigned char *str) {
     for (size_t i = 0; i < N; i++) {
       unsigned char c = str[i];
       asm("#" ::"r"(c));
     }
-  };
-
-  f.cb_signed = [](int64_t x) { asm("#" ::"r"(x)); };
-
-  f.cb_unsigned = [](uint64_t x) { asm("#" ::"r"(x)); };
-
-  f.cb_boolean = [](bool x) { asm("#" ::"r"(x)); };
-
-  f.cb_array_elements = [&f](byte_range bytes) { handle_msgpack(bytes, f); };
-
-  f.cb_map_elements = [&f](byte_range key, byte_range value) {
-    handle_msgpack(key, f);
-    handle_msgpack(value, f);
-  };
-  return f;
-}
+  }
+  void handle_signed(int64_t x) { asm("#" ::"r"(x)); }
+  void handle_unsigned(uint64_t x) { asm("#" ::"r"(x)); }
+  void handle_boolean(bool x) { asm("#" ::"r"(x)); }
+  void handle_array_elements(byte_range bytes) {
+    handle_msgpack<functors_readall>(bytes, {});
+  }
+  void handle_map_elements(byte_range key, byte_range value) {
+    handle_msgpack<functors_readall>(key, {});
+    handle_msgpack<functors_readall>(value, {});
+  }
+};
 
 TEST_CASE("check all short byte sequences") {
   SECTION("unary") {
-    functors f = readall_functors();
+    functors_readall f;
     unsigned char *byte = (unsigned char *)malloc(1);
     bool ok = true;
     for (unsigned i = 0; i < 256; i++) {
@@ -50,7 +45,7 @@ TEST_CASE("check all short byte sequences") {
   }
 
   SECTION("binary") {
-    functors f = readall_functors();
+    functors_readall f;
     unsigned N = 2;
     unsigned char *byte = (unsigned char *)malloc(N);
     bool ok = true;
@@ -67,12 +62,12 @@ TEST_CASE("check all short byte sequences") {
   }
 
   SECTION("ternary") {
-    functors f = readall_functors();
+    functors_readall f;
     unsigned N = 3;
     unsigned char *byte = (unsigned char *)malloc(N);
     bool ok = true;
     for (unsigned i = 0; i < 256; i++) {
-      continue; // skip this for now
+      // continue; // skip this for now
       for (unsigned j = 0; j < 256; j++) {
         for (unsigned k = 0; k < 256; k++) {
           byte[0] = (unsigned char)i;
@@ -97,7 +92,7 @@ TEST_CASE("from urandom") {
   unsigned N = 1024;
   unsigned offset = 50;
   unsigned char *bytes = (unsigned char *)malloc(N);
-  functors f = readall_functors();
+  functors_readall f;
 
   bool ok = true;
   for (unsigned r = 0; r < reps; r++) {
