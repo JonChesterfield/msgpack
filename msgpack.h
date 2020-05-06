@@ -259,8 +259,208 @@ struct example : public functors_defaults<example> {
   }
 };
 
-template <typename F> const unsigned char *handle_msgpack(byte_range, F f);
-template <typename F> void handle_msgpack_void(byte_range, F f);
+typedef enum : uint8_t {
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER) NAME,
+#include "msgpack.def"
+#undef X
+} type;
+
+typedef enum : uint8_t {
+  boolean,
+  unsigned_integer,
+  signed_integer,
+  string,
+  array,
+  map,
+  other,
+} coarse_type;
+
+[[noreturn]] void internal_error();
+type parse_type(unsigned char x);
+unsigned bytes_used_fixed(type ty);
+
+typedef uint64_t (*payload_info_t)(const unsigned char *);
+payload_info_t payload_info(msgpack::type ty);
+template <typename T, typename R> R bitcast(T x);
+
+namespace {
+
+template <bool ResUsed, msgpack::coarse_type cty, typename F>
+constexpr bool can_early_return() {
+  // If the returned pointer is unused and the function called is known to
+  // do nothing other than compute the return pointer, it doesn't need to
+  // be called. The CFA needed to prove this in the compiler doesn't appear
+  // to be sufficient yet, so hardcode the implementation detail that the
+  // defaults to nothing other than compute the return pointer
+  // TODO: Rename parts of this mechanism
+  return ResUsed ? false
+                 : cty == msgpack::boolean
+                       ? F::has_default_boolean()
+                       : cty == msgpack::unsigned_integer
+                             ? F::has_default_unsigned()
+                             : cty == msgpack::signed_integer
+                                   ? F::has_default_signed()
+                                   : cty == msgpack::string
+                                         ? F::has_default_string()
+                                         : cty == msgpack::array
+                                               ? F::has_default_array()
+                                               : cty == msgpack::map
+                                                     ? F::has_default_map()
+                                                     : cty == msgpack::other
+                                                           ? true
+                                                           : false;
+}
+} // namespace
+
+namespace cat {
+constexpr bool is_boolean(type ty) { return (ty == t || ty == f); }
+constexpr bool is_unsigned_integer(type ty) {
+  return (ty == posfixint || ty == uint8 || ty == uint16 || ty == uint32 ||
+          ty == uint64);
+}
+constexpr bool is_signed_integer(type ty) {
+  return (ty == negfixint || ty == int8 || ty == int16 || ty == int32 ||
+          ty == int64);
+}
+constexpr bool is_string(type ty) {
+  return (ty == fixstr || ty == str8 || ty == str16 || ty == str32);
+}
+constexpr bool is_array(type ty) {
+  return (ty == fixarray || ty == array16 || ty == array32);
+}
+constexpr bool is_map(type ty) {
+  return (ty == fixmap || ty == map16 || ty == map32);
+}
+} // namespace cat
+constexpr coarse_type categorize(type ty) {
+  // TODO: Change to switch when C++14 can be assumed
+  return cat::is_boolean(ty)
+             ? boolean
+             : cat::is_unsigned_integer(ty)
+                   ? unsigned_integer
+                   : cat::is_signed_integer(ty)
+                         ? signed_integer
+                         : cat::is_string(ty)
+                               ? string
+                               : cat::is_array(ty)
+                                     ? array
+                                     : cat::is_map(ty) ? map : other;
+}
+
+template <bool ResUsed, msgpack::type ty, typename F>
+const unsigned char *handle_msgpack_given_type(msgpack::byte_range bytes, F f) {
+  const unsigned char *start = bytes.start;
+  const unsigned char *end = bytes.end;
+  const uint64_t available = end - start;
+  assert(available != 0);
+
+  // Would be better to skip the bytes used calculation when the result value is
+  // not used and the type has no handler registered
+  const uint64_t bytes_used = bytes_used_fixed(ty);
+  if (available < bytes_used) {
+    return 0;
+  }
+  const uint64_t available_post_header = available - bytes_used;
+
+  const payload_info_t info = payload_info(ty);
+  const uint64_t N = info(start);
+
+  constexpr msgpack::coarse_type cty = categorize(ty);
+  {
+    constexpr bool early = can_early_return<ResUsed, cty, F>();
+    if (early) {
+      return 0;
+    }
+  }
+
+  switch (cty) {
+  case msgpack::boolean: {
+    // t is 0b11000010, f is 0b11000011, masked with 0x1
+    f.cb_boolean(N);
+    return start + bytes_used;
+  }
+
+  case msgpack::unsigned_integer: {
+    f.cb_unsigned(N);
+    return start + bytes_used;
+  }
+
+  case msgpack::signed_integer: {
+    f.cb_signed(bitcast<uint64_t, int64_t>(N));
+    return start + bytes_used;
+  }
+
+  case msgpack::string: {
+    if (available_post_header < N) {
+      return 0;
+    } else {
+      f.cb_string(N, start + bytes_used);
+      return start + bytes_used + N;
+    }
+  }
+
+  case msgpack::array: {
+    return f.cb_array(N, {start + bytes_used, end});
+  }
+
+  case msgpack::map: {
+    return f.cb_map(N, {start + bytes_used, end});
+  }
+
+  case msgpack::other: {
+    if (!ResUsed) {
+      return 0;
+    }
+    if (available_post_header < N) {
+      return 0;
+    }
+    return start + bytes_used + N;
+  }
+  }
+  internal_error();
+}
+
+namespace {
+template <bool ResUsed, typename F>
+const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
+
+  const unsigned char *start = bytes.start;
+  const unsigned char *end = bytes.end;
+  const uint64_t available = end - start;
+  if (available == 0) {
+    return 0;
+  }
+  const msgpack::type ty = msgpack::parse_type(*start);
+  const bool asm_markers = false;
+
+  switch (ty) {
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
+  case msgpack::NAME: {                                                        \
+    if (asm_markers)                                                           \
+      asm("# Handle msgpack::" #NAME " begin");                                \
+    const unsigned char *res =                                                 \
+        handle_msgpack_given_type<ResUsed, msgpack::NAME, F>(bytes, f);        \
+    if (asm_markers)                                                           \
+      asm("# Handle msgpack::" #NAME " finish");                               \
+    return res;                                                                \
+  }
+
+#include "msgpack.def"
+#undef X
+  }
+
+  internal_error();
+}
+} // namespace
+
+template <typename F>
+const unsigned char *handle_msgpack(byte_range bytes, F f) {
+  return handle_msgpack_dispatch<true, F>(bytes, f);
+}
+
+template <typename F> void handle_msgpack_void(byte_range bytes, F f) {
+  handle_msgpack_dispatch<false, F>(bytes, f);
+}
 
 bool message_is_string(byte_range bytes, const char *str);
 

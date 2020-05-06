@@ -6,64 +6,10 @@
 
 #include "msgpack.h"
 
-namespace {
+namespace msgpack {
 [[noreturn]] void internal_error() {
   printf("internal error\n");
   exit(1);
-}
-} // namespace
-
-namespace msgpack {
-
-typedef enum : uint8_t {
-#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER) NAME,
-#include "msgpack.def"
-#undef X
-} type;
-
-typedef enum : uint8_t {
-  boolean,
-  unsigned_integer,
-  signed_integer,
-  string,
-  array,
-  map,
-  other,
-} coarse_type;
-
-namespace cat {
-constexpr bool is_boolean(type ty) { return (ty == t || ty == f); }
-constexpr bool is_unsigned_integer(type ty) {
-  return (ty == posfixint || ty == uint8 || ty == uint16 || ty == uint32 ||
-          ty == uint64);
-}
-constexpr bool is_signed_integer(type ty) {
-  return (ty == negfixint || ty == int8 || ty == int16 || ty == int32 ||
-          ty == int64);
-}
-constexpr bool is_string(type ty) {
-  return (ty == fixstr || ty == str8 || ty == str16 || ty == str32);
-}
-constexpr bool is_array(type ty) {
-  return (ty == fixarray || ty == array16 || ty == array32);
-}
-constexpr bool is_map(type ty) {
-  return (ty == fixmap || ty == map16 || ty == map32);
-}
-} // namespace cat
-constexpr coarse_type categorize(type ty) {
-  // TODO: Change to switch when C++14 can be assumed
-  return cat::is_boolean(ty)
-             ? boolean
-             : cat::is_unsigned_integer(ty)
-                   ? unsigned_integer
-                   : cat::is_signed_integer(ty)
-                         ? signed_integer
-                         : cat::is_string(ty)
-                               ? string
-                               : cat::is_array(ty)
-                                     ? array
-                                     : cat::is_map(ty) ? map : other;
 }
 
 const char *type_name(type ty) {
@@ -163,31 +109,28 @@ extern "C" void gen_parse_type_tab(void) {
   printf("}\n");
 }
 
-} // namespace msgpack
-
-namespace {
 template <typename T, typename R> R bitcast(T x) {
   static_assert(sizeof(T) == sizeof(R), "");
   R tmp;
   memcpy(&tmp, &x, sizeof(T));
   return tmp;
 }
-
+template int64_t bitcast<uint64_t, int64_t>(uint64_t);
+} // namespace msgpack
 // Helper functions for reading additional payload from the header
 // Depending on the type, this can be a number of bytes, elements,
 // key-value pairs or an embedded integer.
 // Each takes a pointer to the start of the header and returns a uint64_t
 
-typedef uint64_t (*payload_info_t)(const unsigned char *);
-
+namespace {
 namespace payload {
 uint64_t read_zero(const unsigned char *) { return 0; }
 
 // Read the first byte and zero/sign extend it
 uint64_t read_embedded_u8(const unsigned char *start) { return start[0]; }
 uint64_t read_embedded_s8(const unsigned char *start) {
-  int64_t res = bitcast<uint8_t, int8_t>(start[0]);
-  return bitcast<int64_t, uint64_t>(res);
+  int64_t res = msgpack::bitcast<uint8_t, int8_t>(start[0]);
+  return msgpack::bitcast<int64_t, uint64_t>(res);
 }
 
 // Read a masked part of the first byte
@@ -245,26 +188,28 @@ uint64_t read_size_field_u64(const unsigned char *from) {
 
 uint64_t read_size_field_s8(const unsigned char *from) {
   uint8_t u = read_size_field_u8(from);
-  int64_t res = bitcast<uint8_t, int8_t>(u);
-  return bitcast<int64_t, uint64_t>(res);
+  int64_t res = msgpack::bitcast<uint8_t, int8_t>(u);
+  return msgpack::bitcast<int64_t, uint64_t>(res);
 }
 uint64_t read_size_field_s16(const unsigned char *from) {
   uint16_t u = read_size_field_u16(from);
-  int64_t res = bitcast<uint16_t, int16_t>(u);
-  return bitcast<int64_t, uint64_t>(res);
+  int64_t res = msgpack::bitcast<uint16_t, int16_t>(u);
+  return msgpack::bitcast<int64_t, uint64_t>(res);
 }
 uint64_t read_size_field_s32(const unsigned char *from) {
   uint32_t u = read_size_field_u32(from);
-  int64_t res = bitcast<uint32_t, int32_t>(u);
-  return bitcast<int64_t, uint64_t>(res);
+  int64_t res = msgpack::bitcast<uint32_t, int32_t>(u);
+  return msgpack::bitcast<int64_t, uint64_t>(res);
 }
 uint64_t read_size_field_s64(const unsigned char *from) {
   uint64_t u = read_size_field_u64(from);
-  int64_t res = bitcast<uint64_t, int64_t>(u);
-  return bitcast<int64_t, uint64_t>(res);
+  int64_t res = msgpack::bitcast<uint64_t, int64_t>(u);
+  return msgpack::bitcast<int64_t, uint64_t>(res);
 }
 } // namespace payload
+} // namespace
 
+namespace msgpack {
 payload_info_t payload_info(msgpack::type ty) {
   using namespace msgpack;
   switch (ty) {
@@ -276,12 +221,9 @@ payload_info_t payload_info(msgpack::type ty) {
   }
   internal_error();
 }
-} // namespace
 
 // Only failure mode is going to be out of bounds
 // Return NULL on out of bounds, otherwise start of the next entry
-
-namespace msgpack {
 namespace fallback {
 
 void nop_string(size_t, const unsigned char *) {}
@@ -346,151 +288,6 @@ const unsigned char *skip_next_message_templated(const unsigned char *start,
 } // namespace msgpack
 
 namespace {
-
-template <bool ResUsed, msgpack::coarse_type cty, typename F>
-constexpr bool can_early_return() {
-  // If the returned pointer is unused and the function called is known to
-  // do nothing other than compute the return pointer, it doesn't need to
-  // be called. The CFA needed to prove this in the compiler doesn't appear
-  // to be sufficient yet, so hardcode the implementation detail that the
-  // defaults to nothing other than compute the return pointer
-  // TODO: Rename parts of this mechanism
-  return ResUsed ? false
-                 : cty == msgpack::boolean
-                       ? F::has_default_boolean()
-                       : cty == msgpack::unsigned_integer
-                             ? F::has_default_unsigned()
-                             : cty == msgpack::signed_integer
-                                   ? F::has_default_signed()
-                                   : cty == msgpack::string
-                                         ? F::has_default_string()
-                                         : cty == msgpack::array
-                                               ? F::has_default_array()
-                                               : cty == msgpack::map
-                                                     ? F::has_default_map()
-                                                     : cty == msgpack::other
-                                                           ? true
-                                                           : false;
-}
-} // namespace
-
-template <bool ResUsed, msgpack::type ty, typename F>
-const unsigned char *handle_msgpack_given_type(msgpack::byte_range bytes, F f) {
-  const unsigned char *start = bytes.start;
-  const unsigned char *end = bytes.end;
-  const uint64_t available = end - start;
-  assert(available != 0);
-
-  // Would be better to skip the bytes used calculation when the result value is
-  // not used and the type has no handler registered
-  const uint64_t bytes_used = bytes_used_fixed(ty);
-  if (available < bytes_used) {
-    return 0;
-  }
-  const uint64_t available_post_header = available - bytes_used;
-
-  const payload_info_t info = payload_info(ty);
-  const uint64_t N = info(start);
-
-  constexpr msgpack::coarse_type cty = categorize(ty);
-  {
-    constexpr bool early = can_early_return<ResUsed, cty, F>();
-    if (early) {
-      return 0;
-    }
-  }
-
-  switch (cty) {
-  case msgpack::boolean: {
-    // t is 0b11000010, f is 0b11000011, masked with 0x1
-    f.cb_boolean(N);
-    return start + bytes_used;
-  }
-
-  case msgpack::unsigned_integer: {
-    f.cb_unsigned(N);
-    return start + bytes_used;
-  }
-
-  case msgpack::signed_integer: {
-    f.cb_signed(bitcast<uint64_t, int64_t>(N));
-    return start + bytes_used;
-  }
-
-  case msgpack::string: {
-    if (available_post_header < N) {
-      return 0;
-    } else {
-      f.cb_string(N, start + bytes_used);
-      return start + bytes_used + N;
-    }
-  }
-
-  case msgpack::array: {
-    return f.cb_array(N, {start + bytes_used, end});
-  }
-
-  case msgpack::map: {
-    return f.cb_map(N, {start + bytes_used, end});
-  }
-
-  case msgpack::other: {
-    if (!ResUsed) {
-      return 0;
-    }
-    if (available_post_header < N) {
-      return 0;
-    }
-    return start + bytes_used + N;
-  }
-  }
-  internal_error();
-}
-
-namespace {
-template <bool ResUsed, typename F>
-const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
-
-  const unsigned char *start = bytes.start;
-  const unsigned char *end = bytes.end;
-  const uint64_t available = end - start;
-  if (available == 0) {
-    return 0;
-  }
-  const msgpack::type ty = msgpack::parse_type(*start);
-  const bool asm_markers = false;
-
-  switch (ty) {
-#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
-  case msgpack::NAME: {                                                        \
-    if (asm_markers)                                                           \
-      asm("# Handle msgpack::" #NAME " begin");                                \
-    const unsigned char *res =                                                 \
-        handle_msgpack_given_type<ResUsed, msgpack::NAME, F>(bytes, f);        \
-    if (asm_markers)                                                           \
-      asm("# Handle msgpack::" #NAME " finish");                               \
-    return res;                                                                \
-  }
-
-#include "msgpack.def"
-#undef X
-  }
-
-  internal_error();
-}
-} // namespace
-
-template <typename F>
-const unsigned char *msgpack::handle_msgpack(msgpack::byte_range bytes, F f) {
-  return handle_msgpack_dispatch<true, F>(bytes, f);
-}
-
-template <typename F>
-void msgpack::handle_msgpack_void(msgpack::byte_range bytes, F f) {
-  handle_msgpack_dispatch<false, F>(bytes, f);
-}
-
-namespace {
 template <msgpack::coarse_type C>
 bool message_is_coarse_type(msgpack::byte_range bytes) {
   const uint64_t available = bytes.end - bytes.start;
@@ -542,7 +339,7 @@ void foreach_array(byte_range bytes, std::function<void(byte_range)> callback) {
   handle_msgpack(bytes, f);
 }
 
-  bool is_boolean(byte_range bytes) {
+bool is_boolean(byte_range bytes) {
   return message_is_coarse_type<msgpack::boolean>(bytes);
 }
 bool is_unsigned(byte_range bytes) {
@@ -634,24 +431,5 @@ void dump(byte_range bytes) {
   handle_msgpack(bytes, f);
   printf("\n");
 }
-
-
-  // instantiations
-template const unsigned char *handle_msgpack(byte_range, functors);
-template const unsigned char *handle_msgpack(byte_range, functors_nop);
-template const unsigned char *
-    handle_msgpack(byte_range, only_apply_if_top_level_is_unsigned);
-template const unsigned char *handle_msgpack(byte_range,
-                                             functors_ignore_nested);
-
-template const unsigned char *handle_msgpack(byte_range, example);
-
-template void handle_msgpack_void(byte_range, functors);
-template void handle_msgpack_void(byte_range, functors_nop);
-template void handle_msgpack_void(byte_range,
-                                  only_apply_if_top_level_is_unsigned);
-template void handle_msgpack_void(byte_range, functors_ignore_nested);
-
-template void handle_msgpack_void(byte_range, example);
 
 } // namespace msgpack
