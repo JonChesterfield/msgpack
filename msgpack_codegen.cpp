@@ -4,6 +4,9 @@
 
 using namespace msgpack;
 
+namespace detail {
+
+// Plumbing to concatenate std::array at constexpr time
 template <size_t... Is> struct seq {};
 
 template <size_t N, size_t... Is>
@@ -25,17 +28,20 @@ concat(const std::array<unsigned char, N1> &a1,
   return concat(a1, a2, gen_seq<N1>{}, gen_seq<N2>{});
 }
 
+// Convert \0 terminated char string literal to array of unsigned char,
+// removing the terminator
 template <size_t N, size_t... I>
-constexpr std::array<unsigned char, N-1> str_to_array2(const char (&s)[N],
-                                                     seq<I...>) {
+constexpr std::array<unsigned char, N - 1> str_to_array(const char (&s)[N],
+                                                        seq<I...>) {
   return {static_cast<unsigned char>(s[I])...};
 }
 
 template <size_t N>
-constexpr std::array<unsigned char, N-1> str_to_array(const char (&s)[N]) {
-  return str_to_array2(s, gen_seq<N-1>{});
+constexpr std::array<unsigned char, N - 1> str_to_array(const char (&s)[N]) {
+  return str_to_array(s, gen_seq<N - 1>{});
 }
 
+// TODO: Avoid repeating the encodings here
 template <size_t N> constexpr std::array<unsigned char, 1> prefix_fixstr() {
   return {{160u + N - 1}};
 }
@@ -52,61 +58,84 @@ template <size_t N> constexpr std::array<unsigned char, 5> prefix_str32() {
   return {{0xdb, 0, 0, 0, N}};
 }
 
-template <size_t N>
-bool message_is_string_explicit(byte_range bytes, const char (&str)[N]) {
-  static_assert(N != 0, "No zero length arrays");
-  static_assert(N <= 32, "Maximum string length is 32");
-  auto memeq = [](const unsigned char *x, const unsigned char *y,
-                  uint64_t sz) -> bool { return memcmp(x, y, sz) == 0; };
+template <size_t N> struct matcher {
+  // Using a struct to stage the construction, as the string is available at
+  // compile time but the byte array is not. This avoids constructing the arrays
+  // at runtime (i.e. avoids writing known constants to the stack)
 
-  // This puts the arrays in the stack, want then in rodata
-  auto arr = str_to_array(str);
-  auto fixstr = concat(prefix_fixstr<N>(), arr);
-  auto str8 = concat(prefix_str8<N>(), arr);
-  auto str16 = concat(prefix_str16<N>(), arr);
-  auto str32 = concat(prefix_str32<N>(), arr);
-  static_assert(arr.size() == N-1, "");
-  static_assert(fixstr.size() == N, "");
-  static_assert(str8.size() == N + 1, "");
-  static_assert(str16.size() == N + 2, "");
-  static_assert(str32.size() == N + 4, "");
-  const uint64_t available = bytes.end - bytes.start;
+  static_assert(N != 0, "");
+  static_assert(N <= 32, "Matcher implemented for strings <= 32 in length");
 
-  // Too many checks on available, looks at more bytes than strictly necessary
-  if (available < fixstr.size())
-    {
+  constexpr matcher(const char (&str)[N]) : str(str) {}
+  const char (&str)[N];
+
+  const std::array<unsigned char, N - 1> arr = str_to_array(str);
+  const std::array<unsigned char, N> fixstr = concat(prefix_fixstr<N>(), arr);
+  const std::array<unsigned char, N + 1> str8 = concat(prefix_str8<N>(), arr);
+  const std::array<unsigned char, N + 2> str16 = concat(prefix_str16<N>(), arr);
+  const std::array<unsigned char, N + 4> str32 = concat(prefix_str32<N>(), arr);
+
+  bool operator()(byte_range bytes) const {
+    const bool asm_markers = false;
+    auto memeq = [](const unsigned char *x, const unsigned char *y,
+                    uint64_t sz) -> bool { return memcmp(x, y, sz) == 0; };
+
+    // Need at least enough bytes for the fixstr encoding for any to match
+    const uint64_t available = bytes.end - bytes.start;
+    if (available < fixstr.size()) {
       return false;
     }
 
-  if (available >= fixstr.size() ) {
-    if (memeq(bytes.start, fixstr.data(), fixstr.size() )) {
+    // Expect the short string to be encoded as a fixstr
+    if (asm_markers) {
+      asm("# Check fixstr");
+    }
+    if (memeq(bytes.start, fixstr.data(), fixstr.size())) {
       return true;
     }
-  }
 
-  if (available >= str8.size() ) {
-    if (memeq(bytes.start, str8.data(), str8.size() )) {
-      return true;
+    if (available >= str32.size()) {
+      if (asm_markers) {
+        asm("# Check str32");
+      }
+      if (memeq(bytes.start, str32.data(), str32.size())) {
+        return true;
+      }
     }
-  }
 
-  if (available >= str16.size()  ) {
-    if (memeq(bytes.start, str16.data(), str16.size() )) {
-      return true;
+    if (available >= str16.size()) {
+      if (asm_markers) {
+        asm("# Check str16");
+      }
+      if (memeq(bytes.start, str16.data(), str16.size())) {
+        return true;
+      }
     }
-  }
 
-  if (available >= str32.size() ) {
-    if (memeq(bytes.start, str32.data(), str32.size() )) {
-      return true;
+    if (available >= str8.size()) {
+      if (asm_markers) {
+        asm("# Check str8");
+      }
+      if (memeq(bytes.start, str8.data(), str8.size())) {
+        return true;
+      }
     }
-  }
 
-  return false;
+    return false;
+  }
+};
+
+template <size_t N> constexpr matcher<N> make_matcher(const char (&str)[N]) {
+  return matcher<N>{str};
 }
+} // namespace detail
 
 extern "C" bool match_foobar_example(byte_range bytes) {
-  return message_is_string_explicit(bytes, "foobar");
+  return message_is_string(bytes, "badger");
+}
+extern "C" bool match_badger_example(byte_range bytes) {
+  constexpr auto m = detail::make_matcher("badger");
+  return m(bytes);
 }
 
 extern "C" const unsigned char *

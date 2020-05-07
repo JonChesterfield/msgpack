@@ -339,7 +339,7 @@ const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
     return 0;
   }
   const msgpack::type ty = msgpack::parse_type(*start);
-  const bool asm_markers = true;
+  const bool asm_markers = false;
 
   switch (ty) {
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
