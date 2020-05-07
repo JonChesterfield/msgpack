@@ -77,11 +77,16 @@ template <size_t N> struct matcher {
 
   bool operator()(byte_range bytes) const {
     const bool asm_markers = false;
+
+    // Faster if the serialiser is assumed to construct fixstr where N < 32
+    const bool only_look_for_fixstr = false;
+
     auto memeq = [](const unsigned char *x, const unsigned char *y,
                     uint64_t sz) -> bool { return memcmp(x, y, sz) == 0; };
 
     // Need at least enough bytes for the fixstr encoding for any to match
     const uint64_t available = bytes.end - bytes.start;
+
     if (available < fixstr.size()) {
       return false;
     }
@@ -92,6 +97,10 @@ template <size_t N> struct matcher {
     }
     if (memeq(bytes.start, fixstr.data(), fixstr.size())) {
       return true;
+    }
+
+    if (only_look_for_fixstr) {
+      return false;
     }
 
     if (available >= str32.size()) {
