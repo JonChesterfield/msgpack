@@ -27,13 +27,14 @@ $CXX msgpack.bc msgpack_test.o msgpack_fuzz.o catch.o helloworld_msgpack.o manyk
 $CXX -DNDEBUG -O3 msgpack.cpp -emit-llvm -S -c -o msgpack.ll
 $LLC msgpack.ll -o msgpack.s
 
-$LINK msgpack.bc msgpack_codegen.bc | $OPT -internalize -internalize-public-api-list="foronly_string_example,foronly_unsigned_example,nop_handle_msgpack_example,skip_next_message_example,message_is_string_example,match_foobar_example,match_badger_example" -O3 -o merged.bc
+$LINK msgpack.bc msgpack_codegen.bc | $OPT -internalize -internalize-public-api-list="foronly_string_example,foronly_unsigned_example,nop_handle_msgpack_example,skip_next_message_example,skip_next_message_v2_example,message_is_string_example,match_foobar_example,match_badger_example" -O3 -o merged.bc
 
 
 llvm-extract merged.bc -func foronly_unsigned_example -S -o foronly_unsigned_example.ll
 llvm-extract merged.bc -func foronly_string_example -S -o foronly_string_example.ll
 llvm-extract merged.bc -func nop_handle_msgpack_example -S -o nop_handle_msgpack_example.ll
-llvm-extract merged.bc -func skip_next_message_example -S -o skip_next_message_example.ll
+llvm-extract merged.bc -func skip_next_message_example -func _ZN7msgpack14handle_msgpackINS_12functors_nopEEEPKhNS_10byte_rangeET_ -S -o skip_next_message_example.ll
+llvm-extract merged.bc -func skip_next_message_v2_example  -S -o skip_next_message_v2_example.ll
 llvm-extract merged.bc -func message_is_string_example -S -o message_is_string_example.ll
 
 

@@ -153,6 +153,12 @@ skip_next_message_example(const unsigned char *start,
   return fallback::skip_next_message(start, end);
 }
 
+extern "C" const unsigned char *
+skip_next_message_v2_example(const unsigned char *start,
+                          const unsigned char *end) {
+  return fallback::skip_number_contiguous_messages(1, start, end);
+}
+
 extern "C" bool message_is_string_example(byte_range bytes, const char *str) {
   return message_is_string(bytes, str);
 }

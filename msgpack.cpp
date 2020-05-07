@@ -238,7 +238,51 @@ struct functors_nop : public functors_defaults<functors_nop> {
 
 const unsigned char *fallback::skip_next_message(const unsigned char *start,
                                                  const unsigned char *end) {
-  return handle_msgpack({start, end}, functors_nop());
+
+  const unsigned char * good = handle_msgpack({start, end}, functors_nop());
+  assert(good == fallback::skip_number_contiguous_messages(1, start, end));
+  return good;
+}
+
+struct functors_message_skip : public functors_defaults<functors_message_skip> {
+  functors_message_skip(uint64_t & n) : number_remaining(n) {}
+  
+  uint64_t & number_remaining;
+
+  // On an array or map, increment the number of messages to skip over and
+  // return a pointer to the first such message
+
+  const unsigned char *handle_array(uint64_t N, byte_range bytes) {
+    // An array is N contiguous messages
+    static_assert(has_default_array_elements() == true, "");
+    number_remaining += N;
+    return bytes.start;
+  }
+
+  const unsigned char *handle_map(uint64_t N, byte_range bytes) {
+    // A map is 2*N contiguous messages
+    static_assert(has_default_map_elements() == true, "");
+    number_remaining += 2*N;
+    return bytes.start;
+  }
+};
+
+const unsigned char *fallback::skip_number_contiguous_messages(
+    uint64_t N, const unsigned char *start, const unsigned char *end) {
+
+  uint64_t number_remaining = N;
+  auto skip = functors_message_skip(number_remaining);
+
+  while (number_remaining != 0) {
+    const unsigned char *r = handle_msgpack({start, end}, skip);
+    number_remaining--;
+    if (!r) {
+      return nullptr;
+    }
+    start = r;
+  }
+
+  return start;
 }
 
 } // namespace msgpack
