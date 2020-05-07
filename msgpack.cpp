@@ -181,9 +181,13 @@ uint64_t read_size_field_u64(const unsigned char *from) {
     memcpy(&b, from, 8);
     return __builtin_bswap64(b);
   } else {
-    return ((uint64_t)from[0] << 56u) | ((uint64_t)from[1] << 48u) |
-           ((uint64_t)from[2] << 40u) | ((uint64_t)from[3] << 32u) |
-           (from[4] << 24u) | (from[5] << 16u) | (from[6] << 8u) |
+    return ((uint64_t)from[0] << 56u) |
+           ((uint64_t)from[1] << 48u) |
+           ((uint64_t)from[2] << 40u) |
+           ((uint64_t)from[3] << 32u) |
+           (from[4] << 24u) |
+           (from[5] << 16u) |
+           (from[6] << 8u) |
            (from[7] << 0u);
   }
 }

@@ -15,13 +15,14 @@ rm -rf *.ll
 $CXX $FLAGS -O2 msgpack.cpp -emit-llvm -c -o msgpack.bc
 $CXX $FLAGS -O2 msgpack_test.cpp -c -o msgpack_test.o
 $CXX $FLAGS -O2 msgpack_fuzz.cpp -c -o msgpack_fuzz.o
+$CXX $FLAGS -O2 msgpack_scalar.cpp -c -o msgpack_scalar.o
 
 $CXX $FLAGS -O2 msgpack_codegen.cpp -emit-llvm -c -o msgpack_codegen.bc
 
 $CC $FLAGS helloworld_msgpack.c -c -o helloworld_msgpack.o
 $CC $FLAGS manykernels_msgpack.c -c -o manykernels_msgpack.o
 
-$CXX msgpack.bc msgpack_test.o msgpack_fuzz.o catch.o helloworld_msgpack.o manykernels_msgpack.o msgpack_codegen.bc -o msgpack.exe
+$CXX msgpack.bc msgpack_test.o msgpack_fuzz.o msgpack_scalar.o catch.o helloworld_msgpack.o manykernels_msgpack.o msgpack_codegen.bc -o msgpack.exe
 
 
 $CXX -DNDEBUG -O3 msgpack.cpp -emit-llvm -S -c -o msgpack.ll

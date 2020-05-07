@@ -387,6 +387,19 @@ template <typename C> void foronly_string(byte_range bytes, C callback) {
   handle_msgpack_void<inner>(bytes, {callback});
 }
 
+template <typename C> void foronly_signed(byte_range bytes, C callback) {
+  struct inner : functors_defaults<inner> {
+    inner(C &cb) : cb(cb) {}
+    C &cb;
+    void handle_signed(int64_t x) { cb(x); }
+  };
+
+  static_assert(inner::has_default_map() == true, "");
+  static_assert(inner::has_default_signed() == false, "");
+
+  handle_msgpack_void<inner>(bytes, {callback});
+}
+
 template <typename C> void foronly_unsigned(byte_range bytes, C callback) {
   struct inner : functors_defaults<inner> {
     inner(C &cb) : cb(cb) {}
@@ -400,6 +413,7 @@ template <typename C> void foronly_unsigned(byte_range bytes, C callback) {
   handle_msgpack_void<inner>(bytes, {callback});
 }
 
+  
 template <typename C> void foreach_array(byte_range bytes, C callback) {
   struct inner : functors_defaults<inner> {
     inner(C &cb) : cb(cb) {}
