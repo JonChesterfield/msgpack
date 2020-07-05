@@ -159,14 +159,14 @@ struct example : public functors_defaults<example> {
   // Possible bug here. Adding this == true before the call
   // makes both the others fail
   // static_assert(has_default_string() == true, "");
-  void handle_string(size_t N, const unsigned char *str) {
+  void handle_string(size_t , const unsigned char *) {
     printf("Called derived handle string\n");
   }
   static_assert(has_default_string() == false, "");
 
   // Here it just fails, as it should
   //   static_assert(handle_string_is_default() == true, "");
-  void handle_array_elements(byte_range bytes) {
+  void handle_array_elements(byte_range) {
     printf("called derived array elements\n");
   }
 };
