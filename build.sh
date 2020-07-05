@@ -12,13 +12,17 @@ OPT="opt"
 
 rm -rf *.ll
 
+# Could be made header only. Presently, msgpack.h defines a C++ interface and
+# msgpack.cpp implements said interface
 $CXX $FLAGS -O2 msgpack.cpp -emit-llvm -c -o msgpack.bc
+
+# Tests
 $CXX $FLAGS -O2 msgpack_test.cpp -c -o msgpack_test.o
 $CXX $FLAGS -O2 msgpack_fuzz.cpp -c -o msgpack_fuzz.o
 $CXX $FLAGS -O2 msgpack_scalar.cpp -c -o msgpack_scalar.o
-
 $CXX $FLAGS -O2 msgpack_codegen.cpp -emit-llvm -c -o msgpack_codegen.bc
 
+# Data
 $CC $FLAGS helloworld_msgpack.c -c -o helloworld_msgpack.o
 $CC $FLAGS manykernels_msgpack.c -c -o manykernels_msgpack.o
 

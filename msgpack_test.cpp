@@ -12,44 +12,6 @@ TEST_CASE("str") { CHECK(helloworld_msgpack_len != 0); }
 
 using namespace msgpack;
 
-void on_matching_string_key_apply_action_to_value(
-    byte_range bytes,
-    std::function<bool(size_t N, const unsigned char *bytes)> predicate,
-    std::function<void(byte_range)> action) {
-  bool matched;
-
-  using Pty = decltype(predicate);
-  using Aty = decltype(action);
-
-  struct inner : functors_defaults<inner> {
-    inner(bool &matched, Pty &predicate, Aty &action)
-        : matched(matched), predicate(predicate), action(action) {}
-
-    bool &matched;
-    Pty &predicate;
-    Aty &action;
-
-    void handle_string(size_t N, const unsigned char *str) {
-      if (predicate(N, str)) {
-        matched = true;
-      }
-    }
-
-    void handle_map_elements(byte_range key, byte_range value) {
-      matched = false;
-      const unsigned char *r =
-          handle_msgpack<inner>(key, inner(matched, predicate, action));
-      (void)r;
-      assert(r == value.start);
-      if (matched) {
-        action(value);
-      }
-    }
-  };
-
-  handle_msgpack<inner>(bytes, {matched, predicate, action});
-}
-
 TEST_CASE("hello world") {
 
   SECTION("run it") {

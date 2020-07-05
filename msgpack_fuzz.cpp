@@ -11,6 +11,7 @@
 
 using namespace msgpack;
 
+namespace {
 struct functors_readall : functors_defaults<functors_readall> {
   void handle_string(size_t N, const unsigned char *str) {
     for (size_t i = 0; i < N; i++) {
@@ -29,6 +30,7 @@ struct functors_readall : functors_defaults<functors_readall> {
     handle_msgpack<functors_readall>(value, {});
   }
 };
+}
 
 TEST_CASE("check all short byte sequences") {
   SECTION("unary") {

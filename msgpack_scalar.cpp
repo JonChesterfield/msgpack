@@ -3,6 +3,7 @@
 
 #include <endian.h>
 
+namespace {
 bool type_can_encode(msgpack::type ty, uint64_t value) {
   using namespace msgpack;
   switch (ty) {
@@ -153,7 +154,7 @@ unsigned char *encode(msgpack::type ty, int64_t value, unsigned char *start,
   }
   }
 }
-
+}
 using namespace msgpack;
 
 TEST_CASE("unsigned") {
