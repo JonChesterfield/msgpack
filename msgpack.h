@@ -5,7 +5,6 @@
 #include <functional>
 
 namespace msgpack {
-
 // The message pack format is dynamically typed, schema-less. Format is:
 // message: [type][header][payload]
 // where type is one byte, header length is a fixed length function of type
@@ -159,7 +158,7 @@ struct example : public functors_defaults<example> {
   // Possible bug here. Adding this == true before the call
   // makes both the others fail
   // static_assert(has_default_string() == true, "");
-  void handle_string(size_t , const unsigned char *) {
+  void handle_string(size_t, const unsigned char *) {
     printf("Called derived handle string\n");
   }
   static_assert(has_default_string() == false, "");
@@ -205,22 +204,25 @@ constexpr bool can_early_return() {
   // to be sufficient yet, so hardcode the implementation detail that the
   // defaults to nothing other than compute the return pointer
   // TODO: Rename parts of this mechanism
-  return ResUsed ? false
-                 : cty == msgpack::boolean
-                       ? F::has_default_boolean()
-                       : cty == msgpack::unsigned_integer
-                             ? F::has_default_unsigned()
-                             : cty == msgpack::signed_integer
-                                   ? F::has_default_signed()
-                                   : cty == msgpack::string
-                                         ? F::has_default_string()
-                                         : cty == msgpack::array
-                                               ? F::has_default_array()
-                                               : cty == msgpack::map
-                                                     ? F::has_default_map()
-                                                     : cty == msgpack::other
-                                                           ? true
-                                                           : false;
+  return ResUsed
+             ? false
+             : cty == msgpack::boolean
+                   ? F::has_default_boolean()
+                   : cty == msgpack::unsigned_integer
+                         ? F::has_default_unsigned()
+                         : cty == msgpack::signed_integer
+                               ? F::has_default_signed()
+                               : cty == msgpack::string
+                                     ? F::has_default_string()
+                                     : cty == msgpack::array
+                                           ? (F::has_default_array() &&
+                                              F::has_default_array_elements())
+                                           : cty == msgpack::map
+                                                 ? (F::has_default_map() &&
+                                                    F::has_default_map_elements())
+                                                 : cty == msgpack::other
+                                                       ? true
+                                                       : false;
 }
 } // namespace
 
@@ -335,7 +337,6 @@ const unsigned char *handle_msgpack_given_type(msgpack::byte_range bytes, F f) {
 namespace {
 template <bool ResUsed, typename F>
 const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
-
   const unsigned char *start = bytes.start;
   const unsigned char *end = bytes.end;
   const uint64_t available = end - start;
@@ -413,7 +414,6 @@ template <typename C> void foronly_unsigned(byte_range bytes, C callback) {
   handle_msgpack_void<inner>(bytes, {callback});
 }
 
-  
 template <typename C> void foreach_array(byte_range bytes, C callback) {
   struct inner : functors_defaults<inner> {
     inner(C &cb) : cb(cb) {}
@@ -431,6 +431,8 @@ template <typename C> void foreach_map(byte_range bytes, C callback) {
       cb(key, value);
     }
   };
+  static_assert(inner::has_default_map() == true, "");
+  static_assert(inner::has_default_map_elements() == false, "");
   handle_msgpack_void<inner>(bytes, {callback});
 }
 
