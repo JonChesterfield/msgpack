@@ -297,7 +297,7 @@ bool message_is_coarse_type(msgpack::byte_range bytes) {
   const uint64_t available = bytes.end - bytes.start;
   // Empty range, contains no typed message
   if (available == 0) {
-    return msgpack::other;
+    return false;
   }
 
   const msgpack::type ty = msgpack::parse_type(*bytes.start);
