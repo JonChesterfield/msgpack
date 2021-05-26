@@ -1,6 +1,7 @@
 #include "catch.hpp"
 #include "msgpack.h"
 #include <array>
+#include <cstring>
 
 using namespace msgpack;
 

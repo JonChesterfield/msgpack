@@ -1,8 +1,10 @@
 #ifndef MSGPACK_H
 #define MSGPACK_H
 
-#include <cstring> // memcpy
-#include <functional>
+#include <cassert>
+#include <cstdint>
+#include <cstddef>
+#include <cstdio>
 
 namespace msgpack {
 // The message pack format is dynamically typed, schema-less. Format is:

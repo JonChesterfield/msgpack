@@ -1,10 +1,8 @@
-#include <cassert>
+#include "msgpack.h"
+
 #include <cstdint>
 #include <cstring>
-#include <functional>
-#include <string>
-
-#include "msgpack.h"
+#include <cstdlib>
 
 namespace msgpack {
 

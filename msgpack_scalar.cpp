@@ -1,6 +1,7 @@
 #include "catch.hpp"
 #include "msgpack.h"
 
+#include <cstring>
 #include <endian.h>
 
 namespace {

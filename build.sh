@@ -1,5 +1,9 @@
 #!/bin/bash
 
+set -x
+set -e
+set -o pipefail
+
 CC="clang -std=c99 -Wall"
 CXX="clang++ -std=c++11 -Wall"
 FLAGS="-DNDEBUG"
@@ -8,7 +12,9 @@ LLC="llc"
 LINK="llvm-link"
 OPT="opt"
 
-# time $CXX -O3 catch.cpp -c -o catch.o
+if [ ! -f catch.o ]; then
+    time $CXX -O3 catch.cpp -c -o catch.o
+fi
 
 rm -rf *.ll
 
