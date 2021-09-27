@@ -69,7 +69,6 @@ TEST_CASE("check all short byte sequences") {
     unsigned char *byte = (unsigned char *)malloc(N);
     bool ok = true;
     for (unsigned i = 0; i < 256; i++) {
-      // continue; // skip this for now
       for (unsigned j = 0; j < 256; j++) {
         for (unsigned k = 0; k < 256; k++) {
           byte[0] = (unsigned char)i;
