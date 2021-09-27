@@ -188,7 +188,6 @@ typedef enum : uint8_t {
   other,
 } coarse_type;
 
-[[noreturn]] void internal_error();
 type parse_type(unsigned char x);
 unsigned bytes_used_fixed(type ty);
 
@@ -333,7 +332,7 @@ const unsigned char *handle_msgpack_given_type(msgpack::byte_range bytes, F f) {
     return start + bytes_used + N;
   }
   }
-  internal_error();
+  __builtin_unreachable();
 }
 
 namespace {
@@ -364,7 +363,7 @@ const unsigned char *handle_msgpack_dispatch(msgpack::byte_range bytes, F f) {
 #undef X
   }
 
-  internal_error();
+  __builtin_unreachable();
 }
 } // namespace
 

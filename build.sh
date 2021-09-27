@@ -4,8 +4,8 @@ set -x
 set -e
 set -o pipefail
 
-CC="clang -std=c99 -Wall"
-CXX="clang++ -std=c++11 -Wall"
+CC="clang -std=c99 -Wall -Wextra"
+CXX="clang++ -std=c++11 -Wall -Wextra"
 FLAGS="-DNDEBUG"
 #FLAGS=""
 LLC="llc"

@@ -5,12 +5,6 @@
 #include <cstdlib>
 
 namespace msgpack {
-
-[[noreturn]] void internal_error() {
-  printf("internal error\n");
-  exit(1);
-}
-
 const char *type_name(type ty) {
   switch (ty) {
 #define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
@@ -19,7 +13,7 @@ const char *type_name(type ty) {
 #include "msgpack.def"
 #undef X
   }
-  internal_error();
+  __builtin_unreachable();
 }
 
 unsigned bytes_used_fixed(msgpack::type ty) {
@@ -31,7 +25,7 @@ unsigned bytes_used_fixed(msgpack::type ty) {
 #include "msgpack.def"
 #undef X
   }
-  internal_error();
+  __builtin_unreachable();
 }
 
 static msgpack::type parse_type1(unsigned char x) {
@@ -42,7 +36,7 @@ static msgpack::type parse_type1(unsigned char x) {
   } else
 #include "msgpack.def"
 #undef X
-  { internal_error(); }
+  {   __builtin_unreachable(); }
 }
 
 static msgpack::type parse_type2(unsigned char x) {
@@ -96,7 +90,6 @@ static msgpack::type parse_type2(unsigned char x) {
 
 msgpack::type parse_type(unsigned char x) {
   const bool tab = false;
-  // CFA is failing to eliminate the trailing internal_error call
   return tab ? parse_type2(x) : parse_type1(x);
 }
 
@@ -224,7 +217,7 @@ payload_info_t payload_info(msgpack::type ty) {
 #include "msgpack.def"
 #undef X
   }
-  internal_error();
+  __builtin_unreachable();
 }
 
 struct functors_nop : public functors_defaults<functors_nop> {
