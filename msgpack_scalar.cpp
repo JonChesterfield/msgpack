@@ -155,7 +155,7 @@ unsigned char *encode(msgpack::type ty, int64_t value, unsigned char *start,
   }
   }
 }
-}
+} // namespace
 using namespace msgpack;
 
 TEST_CASE("unsigned") {
@@ -239,5 +239,26 @@ TEST_CASE("signed") {
         }
       }
     }
+  }
+}
+
+static bool enum_in_bounds(msgpack::type e) {
+  switch ((uint8_t)e) {
+#define X(NAME, WIDTH, PAYLOAD, LOWER, UPPER)                                  \
+  case msgpack::NAME:                                                          \
+    return true;
+
+#include "msgpack.def"
+#undef X
+  }
+
+  return false;
+}
+
+TEST_CASE("parse_type is total") {
+  for (uint16_t i = 0; i < 256; i++) {
+    unsigned char x = (unsigned char)i;
+    msgpack::type t = parse_type(x);
+    CHECK(enum_in_bounds(t));
   }
 }
